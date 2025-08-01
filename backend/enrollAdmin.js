@@ -52,4 +52,4 @@ async function enrollAdmin() {
   }
 }
 
-enrollAdmin();
+enrollAdmin(); 

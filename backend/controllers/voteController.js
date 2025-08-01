@@ -3,6 +3,8 @@
 const { connectToNetwork } = require('../blockchain/fabricUtils');
 const Vote = require('../models/Vote'); // (MongoDB model)
 const User = require('../models/User'); // (MongoDB model)
+const Voter = require('../models/Voter'); // (MongoDB model for voter verification)
+const Election = require('../models/Election'); // (MongoDB model for election data)
 
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
@@ -15,24 +17,47 @@ exports.registerVoter = async (req, res) => {
       return res.status(400).json({ error: 'Matric number and surname are required' });
     }
 
+    // First, verify that the voter exists in the uploaded voter database
+    const uploadedVoter = await Voter.findOne({ 
+      matricNumber: matricNumber, 
+      isActive: true 
+    });
+
+    if (!uploadedVoter) {
+      return res.status(403).json({ 
+        error: 'Voter not found in the registered voter list. Please contact the administrator.' 
+      });
+    }
+
+    // Verify surname matches (case-insensitive)
+    const voterSurname = uploadedVoter.fullName.split(' ').pop().toLowerCase();
+    const providedSurname = surname.toLowerCase();
+    
+    if (voterSurname !== providedSurname) {
+      return res.status(403).json({ 
+        error: 'Surname does not match the registered voter information.' 
+      });
+    }
+
     // Check for existing registration
     const existingUser = await User.findOne({ matricNumber });
     if (existingUser) {
-      return res.status(400).json({ error: 'Voter already registered' });
+      return res.status(400).json({ error: 'Voter already registered for voting' });
     }
 
     // Generate secure random code (e.g. 6-digit alphanumeric)
     const code = crypto.randomBytes(3).toString('hex').toUpperCase(); // e.g. 'A3F2D1'
 
-     // Hash the code
-     const hashedCode = await bcrypt.hash(code, 10);
+    // Hash the code
+    const hashedCode = await bcrypt.hash(code, 10);
 
     // Create and save user
     const newUser = new User({
       matricNumber,
       surname,
       code: hashedCode,
-      hasVoted: false
+      hasVoted: false,
+      voterId: uploadedVoter._id // Link to the uploaded voter record
     });
 
     await newUser.save();
@@ -40,7 +65,13 @@ exports.registerVoter = async (req, res) => {
     // In a real-world app: send code via SMS/email
     return res.status(201).json({
       message: 'Voter registered successfully. Use the code to vote.',
-      code: code // Return the plain code for testing purposes
+      code: code, // Return the plain code for testing purposes
+      voterInfo: {
+        fullName: uploadedVoter.fullName,
+        email: uploadedVoter.email,
+        department: uploadedVoter.department,
+        faculty: uploadedVoter.faculty
+      }
     });
   } catch (error) {
     console.error('Error registering voter:', error);
@@ -145,5 +176,48 @@ exports.viewMyVote = async (req, res) => {
   } catch (error) {
     console.error('Error viewing vote:', error);
     res.status(500).json({ error: 'Could not fetch vote' });
+  }
+};
+
+// Get current election information for voting dashboard
+exports.getCurrentElectionInfo = async (req, res) => {
+  try {
+    // Get the current active election
+    const election = await Election.findOne({ isActive: true, status: 'active' });
+    
+    if (!election) {
+      return res.status(404).json({ 
+        error: 'No active election found' 
+      });
+    }
+
+    // Get all candidates for the election
+    const Candidate = require('../models/Candidate');
+    const candidates = await Candidate.find({ isActive: true }).sort({ createdAt: -1 });
+
+    // Get voter count
+    const voterCount = await Voter.countDocuments({ isActive: true });
+
+    res.json({
+      success: true,
+      election: {
+        title: election.title,
+        description: election.description,
+        startDate: election.startDate,
+        totalVoters: voterCount,
+        totalCandidates: candidates.length
+      },
+      candidates: candidates.map(candidate => ({
+        id: candidate._id,
+        fullName: candidate.fullName,
+        position: candidate.position,
+        department: candidate.department,
+        image: candidate.image
+      }))
+    });
+
+  } catch (error) {
+    console.error('Error getting election info:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
