@@ -59,16 +59,29 @@ const RealTimeResults = () => {
       setVoterTurnout(data.voterTurnout || 0)
       setLastUpdated(new Date())
 
-      // Mock election data for now
-      const mockElection = {
-        id: 1,
-        title: "Student Union Election 2024",
-        description: "Annual student union leadership election",
-        status: "active",
-        totalRegisteredVoters: 1250,
-        endDate: "2024-12-31T17:00:00Z",
+      // Get actual election data from API
+      const electionInfoResponse = await getCurrentElectionInfo();
+      if (electionInfoResponse.success && electionInfoResponse.election) {
+        setElection({
+          id: 1,
+          title: electionInfoResponse.election.title,
+          description: electionInfoResponse.election.description || "Election in progress",
+          status: "active",
+          totalRegisteredVoters: electionInfoResponse.election.totalVoters,
+          endDate: new Date().toISOString(),
+        });
+      } else {
+        // Fallback to mock data if API fails
+        const mockElection = {
+          id: 1,
+          title: "Election in Progress",
+          description: "Election is currently active",
+          status: "active",
+          totalRegisteredVoters: 0,
+          endDate: new Date().toISOString(),
+        };
+        setElection(mockElection);
       }
-      setElection(mockElection)
     } catch (error) {
       console.error("Failed to load results:", error)
       setError("Failed to load election results. Please try again.")
@@ -77,21 +90,21 @@ const RealTimeResults = () => {
       const mockResults = [
         {
           positionId: 1,
-          positionTitle: "President",
+          positionTitle: "Position",
           candidates: [
             {
               id: 1,
-              fullName: "John Doe",
-              department: "Computer Science",
-              votes: 342,
-              percentage: 45.2,
+              fullName: "Candidate 1",
+              department: "Department",
+              votes: 0,
+              percentage: 0,
             },
             {
               id: 2,
-              fullName: "Jane Smith",
-              department: "Engineering",
-              votes: 289,
-              percentage: 38.1,
+              fullName: "Candidate 2",
+              department: "Department",
+              votes: 0,
+              percentage: 0,
             },
           ],
         },

@@ -1,5 +1,32 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+} from 'chart.js';
+import { Bar, Doughnut } from 'react-chartjs-2';
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement
+);
+
 import {
   Users,
   Vote,
@@ -35,6 +62,7 @@ import {
   createCandidate,
   deleteCandidate,
   getAllVoters,
+  createVoter,
   bulkCreateVoters,
   deleteVoter,
   getCurrentElection,
@@ -55,6 +83,15 @@ const AdminDashboard = () => {
   const [electionStarted, setElectionStarted] = useState(false);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [realTimeStats, setRealTimeStats] = useState({
+    totalVotesCast: 0,
+    voterTurnout: 0,
+    leadingCandidate: null,
+    marginOfVictory: 0,
+    participationRate: 0,
+    lastUpdated: null
+  });
+  const [resultsRef] = useState(useRef(null));
 
   // Admin management states
   const [showAdminManagement, setShowAdminManagement] = useState(false);
@@ -95,15 +132,26 @@ const AdminDashboard = () => {
   // Modal states
   const [showTitleModal, setShowTitleModal] = useState(false);
   const [showVotersModal, setShowVotersModal] = useState(false);
+  const [showUploadVotersModal, setShowUploadVotersModal] = useState(false);
+  const [showViewVotersModal, setShowViewVotersModal] = useState(false);
   const [showCandidatesModal, setShowCandidatesModal] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [showAddCandidateModal, setShowAddCandidateModal] = useState(false);
+  const [showAddVoterModal, setShowAddVoterModal] = useState(false);
 
   // Form states
   const [tempElectionTitle, setTempElectionTitle] = useState("");
   const [newCandidate, setNewCandidate] = useState({});
+  const [newVoter, setNewVoter] = useState({
+    firstName: '',
+    surname: '',
+    matricNumber: '',
+    department: '',
+    faculty: ''
+  });
   const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadedVoters, setUploadedVoters] = useState([]);
 
   const navigate = useNavigate();
 
@@ -113,11 +161,11 @@ const AdminDashboard = () => {
     
     if (auth === "true" && adminData) {
       try {
-        const admin = JSON.parse(adminData);
-        setIsAuthenticated(true);
-        setAdminUsername(admin.username || "Administrator");
-        setCurrentAdmin(admin);
-        loadExistingData();
+      const admin = JSON.parse(adminData);
+      setIsAuthenticated(true);
+      setAdminUsername(admin.username || "Administrator");
+      setCurrentAdmin(admin);
+      loadExistingData();
       } catch (error) {
         console.error('AdminDashboard: Error parsing admin data:', error)
         navigate("/admin/login");
@@ -134,6 +182,20 @@ const AdminDashboard = () => {
       loadAdmins();
     }
   }, [showAdminManagement]);
+
+  // Real-time results polling
+  useEffect(() => {
+    let interval;
+    if (electionStarted) {
+      // Fetch results immediately
+      fetchRealTimeResults();
+      // Then poll every 30 seconds
+      interval = setInterval(fetchRealTimeResults, 30000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [electionStarted, candidates, voters]);
 
   const loadExistingData = async () => {
     try {
@@ -173,10 +235,10 @@ const AdminDashboard = () => {
       try {
         const response = await createOrUpdateElection({ title: tempElectionTitle });
         if (response.success) {
-          setElectionTitle(tempElectionTitle);
-          setShowTitleModal(false);
-          setTempElectionTitle("");
-          showToast("Election title set successfully!", "success");
+      setElectionTitle(tempElectionTitle);
+      setShowTitleModal(false);
+      setTempElectionTitle("");
+      showToast("Election title set successfully!", "success");
         } else {
           showToast(response.message || "Failed to set election title", "error");
         }
@@ -187,45 +249,102 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleFileUpload = async (event) => {
+    const handleFileUpload = async (event) => {
     const file = event.target.files?.[0];
     if (file) {
       setSelectedFile(file);
       try {
-        // For now, we'll use mock data - in a real implementation, you'd parse the CSV file
-        const mockVoters = [
-          {
-            fullName: "John Doe",
-            email: "john@student.edu",
-            matricNumber: "STU001",
-            department: "Computer Science",
-            faculty: "Engineering",
-          },
-          {
-            fullName: "Jane Smith",
-            email: "jane@student.edu",
-            matricNumber: "STU002",
-            department: "Mathematics",
-            faculty: "Sciences",
-          },
-          {
-            fullName: "Mike Johnson",
-            email: "mike@student.edu",
-            matricNumber: "STU003",
-            department: "Physics",
-            faculty: "Sciences",
-          },
-        ];
+        const fileExtension = file.name.split('.').pop().toLowerCase();
+        
+        if (fileExtension === 'csv') {
+          // Parse CSV file
+          Papa.parse(file, {
+            header: true, // Treat first row as headers
+            skipEmptyLines: true,
+            complete: (results) => {
+              if (results.errors.length > 0) {
+                showToast(`CSV parsing errors: ${results.errors.length} errors found`, "error");
+                console.error('CSV parsing errors:', results.errors);
+              }
 
-        const response = await bulkCreateVoters(mockVoters);
-        if (response.success) {
-          setVoters(response.createdVoters);
-          showToast(`Successfully uploaded ${response.createdVoters.length} voters!`, "success");
-          if (response.errors && response.errors.length > 0) {
-            showToast(`Some voters had issues: ${response.errors.length} errors`, "error");
-          }
+              const parsedVoters = results.data
+                .filter(row => row.firstName && row.surname && row.matricNumber) // Filter out empty rows
+                .map(row => ({
+                  firstName: row.firstName?.trim() || '',
+                  surname: row.surname?.trim() || '',
+                  matricNumber: row.matricNumber?.trim() || '',
+                  department: row.department?.trim() || '',
+                  faculty: row.faculty?.trim() || ''
+                }));
+
+              if (parsedVoters.length === 0) {
+                showToast('No valid voter data found in the file. Please check the CSV format.', "error");
+                return;
+              }
+
+              setUploadedVoters(parsedVoters);
+              showToast(`File uploaded successfully! ${parsedVoters.length} voters ready to import.`, "success");
+            },
+            error: (error) => {
+              console.error('CSV parsing error:', error);
+              showToast('Error parsing CSV file. Please check the file format.', "error");
+            }
+          });
+        } else if (fileExtension === 'xlsx' || fileExtension === 'xls') {
+          // Parse Excel file
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const data = new Uint8Array(e.target.result);
+              const workbook = XLSX.read(data, { type: 'array' });
+              const sheetName = workbook.SheetNames[0];
+              const worksheet = workbook.Sheets[sheetName];
+              const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+              if (jsonData.length < 2) {
+                showToast('Excel file must have at least a header row and one data row.', "error");
+                return;
+              }
+
+              // Get headers from first row
+              const headers = jsonData[0];
+              const dataRows = jsonData.slice(1);
+
+              const parsedVoters = dataRows
+                .filter(row => row.length > 0 && row[0] && row[1] && row[2]) // Filter out empty rows
+                .map(row => {
+                  const voter = {};
+                  headers.forEach((header, index) => {
+                    if (header && row[index]) {
+                      voter[header.toLowerCase()] = row[index]?.toString().trim() || '';
+                    }
+                  });
+                  return voter;
+                })
+                .filter(voter => voter.firstname && voter.surname && voter.matricnumber) // Filter valid voters
+                .map(voter => ({
+                  firstName: voter.firstname || voter.firstName || '',
+                  surname: voter.surname || voter.surname || '',
+                  matricNumber: voter.matricnumber || voter.matricNumber || '',
+                  department: voter.department || '',
+                  faculty: voter.faculty || ''
+                }));
+
+              if (parsedVoters.length === 0) {
+                showToast('No valid voter data found in the Excel file. Please check the format.', "error");
+                return;
+              }
+
+              setUploadedVoters(parsedVoters);
+              showToast(`File uploaded successfully! ${parsedVoters.length} voters ready to import.`, "success");
+            } catch (error) {
+              console.error('Excel parsing error:', error);
+              showToast('Error parsing Excel file. Please check the file format.', "error");
+            }
+          };
+          reader.readAsArrayBuffer(file);
         } else {
-          showToast(response.message || "Failed to upload voters", "error");
+          showToast('Unsupported file format. Please upload a CSV or Excel file.', "error");
         }
       } catch (error) {
         console.error('Error uploading voters:', error);
@@ -234,13 +353,39 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleSubmitUploadedVoters = async () => {
+    if (uploadedVoters.length === 0) {
+      showToast('No voters to upload', 'error');
+      return;
+    }
+
+    try {
+      const response = await bulkCreateVoters(uploadedVoters);
+      if (response.success) {
+        setVoters(response.createdVoters);
+        setUploadedVoters([]);
+        setSelectedFile(null);
+        setShowUploadVotersModal(false);
+        showToast(`Successfully uploaded ${response.createdVoters.length} voters!`, "success");
+        if (response.errors && response.errors.length > 0) {
+          showToast(`Some voters had issues: ${response.errors.length} errors`, "error");
+        }
+      } else {
+        showToast(response.message || "Failed to upload voters", "error");
+      }
+    } catch (error) {
+      console.error('Error uploading voters:', error);
+      showToast('Error uploading voters', 'error');
+    }
+  };
+
   const handleDeleteVoter = async (voterId) => {
     try {
       const response = await deleteVoter(voterId);
       if (response.success) {
         const updatedVoters = voters.filter((voter) => voter._id !== voterId);
-        setVoters(updatedVoters);
-        showToast("Voter deleted successfully!", "success");
+    setVoters(updatedVoters);
+    showToast("Voter deleted successfully!", "success");
       } else {
         showToast(response.message || "Failed to delete voter", "error");
       }
@@ -254,23 +399,23 @@ const AdminDashboard = () => {
     if (newCandidate.fullName && newCandidate.email && newCandidate.matricNumber) {
       try {
         const candidateData = {
-          fullName: newCandidate.fullName || "",
-          email: newCandidate.email || "",
-          phone: newCandidate.phone || "",
-          department: newCandidate.department || "",
-          matricNumber: newCandidate.matricNumber || "",
-          position: newCandidate.position || "",
-          image: newCandidate.image,
-          agreedToRules: newCandidate.agreedToRules || false,
-        };
+        fullName: newCandidate.fullName || "",
+        email: newCandidate.email || "",
+        phone: newCandidate.phone || "",
+        department: newCandidate.department || "",
+        matricNumber: newCandidate.matricNumber || "",
+        position: newCandidate.position || "",
+        image: newCandidate.image,
+        agreedToRules: newCandidate.agreedToRules || false,
+      };
 
         const response = await createCandidate(candidateData);
         if (response.success) {
           const updatedCandidates = [...candidates, response.candidate];
-          setCandidates(updatedCandidates);
-          setNewCandidate({});
-          setShowAddCandidateModal(false);
-          showToast("Candidate added successfully!", "success");
+      setCandidates(updatedCandidates);
+      setNewCandidate({});
+      setShowAddCandidateModal(false);
+      showToast("Candidate added successfully!", "success");
         } else {
           showToast(response.message || "Failed to add candidate", "error");
         }
@@ -286,8 +431,8 @@ const AdminDashboard = () => {
       const response = await deleteCandidate(candidateId);
       if (response.success) {
         const updatedCandidates = candidates.filter((candidate) => candidate._id !== candidateId);
-        setCandidates(updatedCandidates);
-        showToast("Candidate deleted successfully!", "success");
+    setCandidates(updatedCandidates);
+    showToast("Candidate deleted successfully!", "success");
       } else {
         showToast(response.message || "Failed to delete candidate", "error");
       }
@@ -302,22 +447,9 @@ const AdminDashboard = () => {
       try {
         const response = await startElection();
         if (response.success) {
-          setElectionStarted(true);
-          
-          // Simulate real-time results
-          const mockResults = candidates.map((candidate, index) => ({
-            candidateId: candidate._id,
-            candidateName: candidate.fullName,
-            votes: Math.floor(Math.random() * 100) + 10,
-            percentage: 0,
-          }));
-
-          const totalVotes = mockResults.reduce((sum, result) => sum + result.votes, 0);
-          mockResults.forEach((result) => {
-            result.percentage = (result.votes / totalVotes) * 100;
-          });
-
-          setResults(mockResults.sort((a, b) => b.votes - a.votes));
+      setElectionStarted(true);
+          // Start real-time data fetching
+          fetchRealTimeResults();
           showToast("Election started successfully!", "success");
         } else {
           showToast(response.message || "Failed to start election", "error");
@@ -331,39 +463,130 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleExportResults = () => {
-    const exportData = {
-      electionTitle,
-      totalVoters: voters.length,
-      totalCandidates: candidates.length,
-      results,
-      exportDate: new Date().toISOString(),
-    };
+  const fetchRealTimeResults = async () => {
+    if (!electionStarted) return;
+    
+    try {
+      // Fetch real-time results from blockchain/database
+      const response = await getResults();
+      if (response && Array.isArray(response)) {
+        // Process real results
+        const processedResults = candidates.map(candidate => {
+          const candidateVotes = response.filter(vote => vote.candidate === candidate._id).length;
+          return {
+            candidateId: candidate._id,
+        candidateName: candidate.fullName,
+            position: candidate.position,
+            department: candidate.department,
+            votes: candidateVotes,
+            percentage: 0
+          };
+        });
 
-    const dataStr = JSON.stringify(exportData, null, 2);
-    const dataUri = "data:application/json;charset=utf-8," + encodeURIComponent(dataStr);
+        const totalVotes = processedResults.reduce((sum, result) => sum + result.votes, 0);
+        processedResults.forEach((result) => {
+          result.percentage = totalVotes > 0 ? (result.votes / totalVotes) * 100 : 0;
+        });
 
-    const exportFileDefaultName = `election_results_${Date.now()}.json`;
+        const sortedResults = processedResults.sort((a, b) => b.votes - a.votes);
+        setResults(sortedResults);
 
-    const linkElement = document.createElement("a");
-    linkElement.setAttribute("href", dataUri);
-    linkElement.setAttribute("download", exportFileDefaultName);
-    linkElement.click();
+        // Calculate statistics
+        calculateStatistics(sortedResults, totalVotes);
+    } else {
+        // Fallback to simulated data for demo
+        const simulatedResults = candidates.map((candidate, index) => ({
+          candidateId: candidate._id,
+          candidateName: candidate.fullName,
+          position: candidate.position,
+          department: candidate.department,
+          votes: Math.floor(Math.random() * (voters.length * 0.8)) + Math.floor(voters.length * 0.1),
+          percentage: 0
+        }));
 
-    showToast("Results exported successfully!", "success");
+        const totalVotes = simulatedResults.reduce((sum, result) => sum + result.votes, 0);
+        simulatedResults.forEach((result) => {
+          result.percentage = totalVotes > 0 ? (result.votes / totalVotes) * 100 : 0;
+        });
+
+        const sortedResults = simulatedResults.sort((a, b) => b.votes - a.votes);
+        setResults(sortedResults);
+        calculateStatistics(sortedResults, totalVotes);
+      }
+    } catch (error) {
+      console.error('Error fetching real-time results:', error);
+    }
+  };
+
+  const calculateStatistics = (results, totalVotes) => {
+    const voterTurnout = voters.length > 0 ? (totalVotes / voters.length) * 100 : 0;
+    const leadingCandidate = results.length > 0 ? results[0] : null;
+    const marginOfVictory = results.length > 1 ? results[0].votes - results[1].votes : 0;
+    const participationRate = voters.length > 0 ? (totalVotes / voters.length) * 100 : 0;
+
+    setRealTimeStats({
+      totalVotesCast: totalVotes,
+      voterTurnout: voterTurnout,
+      leadingCandidate: leadingCandidate,
+      marginOfVictory: marginOfVictory,
+      participationRate: participationRate,
+      lastUpdated: new Date()
+    });
+  };
+
+  const handleExportResults = async () => {
+    if (!resultsRef.current) {
+      showToast("Results not available for export", "error");
+      return;
+    }
+
+    try {
+      const canvas = await html2canvas(resultsRef.current, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgWidth = 210;
+      const pageHeight = 295;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+
+      let position = 0;
+
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      const fileName = `election_results_${electionTitle.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+      pdf.save(fileName);
+
+      showToast("Results exported to PDF successfully!", "success");
+    } catch (error) {
+      console.error('Error exporting to PDF:', error);
+      showToast("Error exporting to PDF", "error");
+    }
   };
 
   const handleResetSystem = async () => {
     try {
       const response = await resetSystemAPI();
       if (response.success) {
-        setElectionTitle("");
-        setVoters([]);
-        setCandidates([]);
-        setResults([]);
-        setElectionStarted(false);
-        setShowResetModal(false);
-        showToast("System reset successfully!", "success");
+    setElectionTitle("");
+    setVoters([]);
+    setCandidates([]);
+    setResults([]);
+    setElectionStarted(false);
+    setShowResetModal(false);
+    showToast("System reset successfully!", "success");
       } else {
         showToast(response.message || "Failed to reset system", "error");
       }
@@ -563,6 +786,42 @@ const AdminDashboard = () => {
       setAdminError(error.message || 'Failed to update admin');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAddVoter = async () => {
+    if (newVoter.firstName && newVoter.surname && newVoter.matricNumber) {
+      try {
+        const voterData = {
+          firstName: newVoter.firstName,
+          surname: newVoter.surname,
+          matricNumber: newVoter.matricNumber,
+          department: newVoter.department || "",
+          faculty: newVoter.faculty || ""
+        };
+
+        const response = await createVoter(voterData);
+        if (response.success) {
+          const updatedVoters = [...voters, response.voter];
+          setVoters(updatedVoters);
+          setNewVoter({
+            firstName: '',
+            surname: '',
+            matricNumber: '',
+            department: '',
+            faculty: ''
+          });
+          setShowAddVoterModal(false);
+          showToast("Voter added successfully!", "success");
+        } else {
+          showToast(response.message || "Failed to add voter", "error");
+        }
+      } catch (error) {
+        console.error('Error adding voter:', error);
+        showToast('Error adding voter', 'error');
+      }
+    } else {
+      showToast('Please fill in all required fields (First Name, Surname, Matric Number)', 'error');
     }
   };
 
@@ -859,8 +1118,12 @@ const AdminDashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {/* Election Title Button */}
           <div
-            onClick={() => setShowTitleModal(true)}
-            className="cursor-pointer hover:shadow-lg transition-shadow bg-white border-2 hover:border-blue-300 rounded-lg"
+            onClick={() => !electionStarted && setShowTitleModal(true)}
+            className={`cursor-pointer transition-shadow bg-white border-2 rounded-lg ${
+              electionStarted 
+                ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60' 
+                : 'hover:shadow-lg hover:border-blue-300'
+            }`}
           >
             <div className="p-6 text-center">
               <FileText className="h-12 w-12 text-blue-600 mx-auto mb-4" />
@@ -868,16 +1131,27 @@ const AdminDashboard = () => {
               <p className="text-sm text-gray-600">Set election name</p>
               {electionTitle && (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-2">
-                  Set
+                    {electionTitle}
                 </span>
               )}
+                {electionStarted && (
+                  <div className="mt-2">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                      Election Active
+                    </span>
+                  </div>
+                )}
             </div>
           </div>
 
           {/* Upload Voters Button */}
           <div
-            onClick={() => setShowVotersModal(true)}
-            className="cursor-pointer hover:shadow-lg transition-shadow bg-white border-2 hover:border-green-300 rounded-lg"
+            onClick={() => !electionStarted && setShowUploadVotersModal(true)}
+            className={`cursor-pointer transition-shadow bg-white border-2 rounded-lg ${
+              electionStarted 
+                ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60' 
+                : 'hover:shadow-lg hover:border-green-300'
+            }`}
           >
             <div className="p-6 text-center">
               <Upload className="h-12 w-12 text-green-600 mx-auto mb-4" />
@@ -888,12 +1162,19 @@ const AdminDashboard = () => {
                   {voters.length} voters
                 </span>
               )}
+                {electionStarted && (
+                  <div className="mt-2">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                      Locked
+                    </span>
+                  </div>
+                )}
             </div>
           </div>
 
           {/* View Voters Button */}
           <div
-            onClick={() => setShowVotersModal(true)}
+            onClick={() => setShowViewVotersModal(true)}
             className="cursor-pointer hover:shadow-lg transition-shadow bg-white border-2 hover:border-purple-300 rounded-lg"
           >
             <div className="p-6 text-center">
@@ -910,8 +1191,12 @@ const AdminDashboard = () => {
 
           {/* Manage Candidates Button */}
           <div
-            onClick={() => setShowCandidatesModal(true)}
-            className="cursor-pointer hover:shadow-lg transition-shadow bg-white border-2 hover:border-orange-300 rounded-lg"
+            onClick={() => !electionStarted && setShowCandidatesModal(true)}
+            className={`cursor-pointer transition-shadow bg-white border-2 rounded-lg ${
+              electionStarted 
+                ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60' 
+                : 'hover:shadow-lg hover:border-orange-300'
+            }`}
           >
             <div className="p-6 text-center">
               <UserPlus className="h-12 w-12 text-orange-600 mx-auto mb-4" />
@@ -922,6 +1207,13 @@ const AdminDashboard = () => {
                   {candidates.length} candidates
                 </span>
               )}
+                {electionStarted && (
+                  <div className="mt-2">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                      Locked
+                    </span>
+                  </div>
+                )}
             </div>
           </div>
         </div>
@@ -1424,14 +1716,14 @@ const AdminDashboard = () => {
         </Modal>
       )}
 
-      {/* Voters Modal */}
-      {showVotersModal && (
-        <Modal onClose={() => setShowVotersModal(false)} size="large">
+      {/* Upload Voters Modal */}
+      {showUploadVotersModal && (
+        <Modal onClose={() => setShowUploadVotersModal(false)} size="large">
           <div className="p-6">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-medium text-gray-900">Manage Voters</h3>
+              <h3 className="text-lg font-medium text-gray-900">Upload Voters</h3>
               <button
-                onClick={() => setShowVotersModal(false)}
+                onClick={() => setShowUploadVotersModal(false)}
                 className="text-gray-500 hover:text-gray-700"
               >
                 ×
@@ -1440,15 +1732,103 @@ const AdminDashboard = () => {
 
             {/* Upload Section */}
             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <h4 className="text-md font-medium text-gray-900 mb-3">Upload Voters</h4>
+              <h4 className="text-md font-medium text-gray-900 mb-3">Upload Voter File</h4>
               <div className="flex items-center space-x-4">
                 <input
                   type="file"
-                  accept=".csv,.xlsx"
+                  accept=".csv,.xlsx,.xls"
                   onChange={handleFileUpload}
                   className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                 />
                 <span className="text-sm text-gray-500">CSV or Excel format</span>
+              </div>
+              
+              {selectedFile && (
+                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                    <span className="text-green-800">File selected: {selectedFile.name}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Preview Uploaded Voters */}
+            {uploadedVoters.length > 0 && (
+              <div className="mb-6 bg-white border border-gray-200 rounded-lg">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-md font-medium text-gray-900">Preview ({uploadedVoters.length} voters)</h4>
+                    <span className="text-sm text-gray-500">Ready to import</span>
+                  </div>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">First Name</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Surname</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Matric Number</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Faculty</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {uploadedVoters.map((voter, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{voter.firstName}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{voter.surname}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{voter.matricNumber}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{voter.department}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{voter.faculty}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => setShowUploadVotersModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmitUploadedVoters}
+                disabled={uploadedVoters.length === 0}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                Import Voters
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* View Voters Modal */}
+      {showViewVotersModal && (
+        <Modal onClose={() => setShowViewVotersModal(false)} size="large">
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-medium text-gray-900">View Voters</h3>
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={() => setShowAddVoterModal(true)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Add Voter</span>
+                </button>
+                <button
+                  onClick={() => setShowViewVotersModal(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  ×
+                </button>
               </div>
             </div>
 
@@ -1467,15 +1847,15 @@ const AdminDashboard = () => {
                 <div className="p-8 text-center">
                   <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-500">No voters registered yet</p>
-                  <p className="text-sm text-gray-400">Upload a CSV file to add voters</p>
+                  <p className="text-sm text-gray-400">Add voters individually or upload a CSV file</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">First Name</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Surname</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Matric Number</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Faculty</th>
@@ -1485,18 +1865,21 @@ const AdminDashboard = () => {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {voters.map((voter) => (
                         <tr key={voter._id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{voter.fullName}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{voter.email}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{voter.firstName}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{voter.surname}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{voter.matricNumber}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{voter.department}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{voter.faculty}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            <button
-                              onClick={() => handleDeleteVoter(voter._id)}
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={() => handleDeleteVoter(voter._id)}
+                                className="text-red-600 hover:text-red-900"
+                                title="Delete voter"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1508,12 +1891,117 @@ const AdminDashboard = () => {
 
             <div className="flex justify-end mt-6">
               <button
-                onClick={() => setShowVotersModal(false)}
+                onClick={() => setShowViewVotersModal(false)}
                 className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 Close
               </button>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Add Voter Modal */}
+      {showAddVoterModal && (
+        <Modal onClose={() => setShowAddVoterModal(false)}>
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-medium text-gray-900">Add New Voter</h3>
+              <button
+                onClick={() => setShowAddVoterModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={(e) => { e.preventDefault(); handleAddVoter(); }}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    First Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newVoter.firstName}
+                    onChange={(e) => setNewVoter({...newVoter, firstName: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter first name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Surname *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newVoter.surname}
+                    onChange={(e) => setNewVoter({...newVoter, surname: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter surname"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Matric Number *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newVoter.matricNumber}
+                    onChange={(e) => setNewVoter({...newVoter, matricNumber: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter matric number"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Department
+                  </label>
+                  <input
+                    type="text"
+                    value={newVoter.department}
+                    onChange={(e) => setNewVoter({...newVoter, department: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter department"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Faculty
+                  </label>
+                  <input
+                    type="text"
+                    value={newVoter.faculty}
+                    onChange={(e) => setNewVoter({...newVoter, faculty: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter faculty"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowAddVoterModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+                >
+                  Add Voter
+                </button>
+              </div>
+            </form>
           </div>
         </Modal>
       )}
@@ -1559,48 +2047,75 @@ const AdminDashboard = () => {
                   <p className="text-sm text-gray-400">Click "Add Candidate" to register candidates</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Photo</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {candidates.map((candidate) => (
-                        <tr key={candidate._id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            {candidate.image ? (
-                              <img src={candidate.image} alt={candidate.fullName} className="h-10 w-10 rounded-full object-cover" />
-                            ) : (
-                              <div className="h-10 w-10 bg-gray-300 rounded-full flex items-center justify-center">
-                                <span className="text-gray-600 font-semibold text-sm">
-                                  {candidate.fullName.split(' ').map(n => n[0]).join('').toUpperCase()}
-                                </span>
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{candidate.fullName}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{candidate.email}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{candidate.position}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{candidate.department}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            <button
-                              onClick={() => handleDeleteCandidate(candidate._id)}
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="space-y-6">
+                  {(() => {
+                    const positions = [
+                      "PRESIDENT",
+                      "VICE PRESIDENT", 
+                      "FINANCIAL SECRETARY",
+                      "GENERAL SECRETARY",
+                      "DIRECTOR OF SOCIALS",
+                      "DIRECTOR OF SPORTS",
+                      "DIRECTOR OF SOFTWARE",
+                      "TREASURER",
+                      "DIRECTOR OF WELFARE",
+                      "ASSISTANT GENERAL SECRETARY"
+                    ];
+                    
+                    return positions.map((position) => {
+                      const positionCandidates = candidates.filter(c => c.position === position);
+                      if (positionCandidates.length === 0) return null;
+                      
+                      return (
+                        <div key={position} className="border border-gray-200 rounded-lg">
+                          <div className="px-4 py-3 bg-blue-50 border-b border-gray-200">
+                            <h4 className="text-sm font-semibold text-blue-900">{position} ({positionCandidates.length} candidate{positionCandidates.length > 1 ? 's' : ''})</h4>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Photo</th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody className="bg-white divide-y divide-gray-200">
+                                {positionCandidates.map((candidate) => (
+                                  <tr key={candidate._id} className="hover:bg-gray-50">
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                      {candidate.image ? (
+                                        <img src={candidate.image} alt={candidate.fullName} className="h-10 w-10 rounded-full object-cover" />
+                                      ) : (
+                                        <div className="h-10 w-10 bg-gray-300 rounded-full flex items-center justify-center">
+                                          <span className="text-gray-600 font-semibold text-sm">
+                                            {candidate.fullName.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{candidate.fullName}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{candidate.email}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{candidate.department}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                      <button
+                                        onClick={() => handleDeleteCandidate(candidate._id)}
+                                        className="text-red-600 hover:text-red-900"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               )}
             </div>
@@ -1668,14 +2183,25 @@ const AdminDashboard = () => {
               </div>
               <div>
                 <label htmlFor="candidate-position" className="block text-sm font-medium text-gray-700 mb-1">Position</label>
-                <input
+                <select
                   id="candidate-position"
-                  type="text"
                   value={newCandidate.position || ''}
                   onChange={(e) => setNewCandidate({...newCandidate, position: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
-                />
+                >
+                  <option value="">Select a position</option>
+                  <option value="PRESIDENT">PRESIDENT</option>
+                  <option value="VICE PRESIDENT">VICE PRESIDENT</option>
+                  <option value="FINANCIAL SECRETARY">FINANCIAL SECRETARY</option>
+                  <option value="GENERAL SECRETARY">GENERAL SECRETARY</option>
+                  <option value="DIRECTOR OF SOCIALS">DIRECTOR OF SOCIALS</option>
+                  <option value="DIRECTOR OF SPORTS">DIRECTOR OF SPORTS</option>
+                  <option value="DIRECTOR OF SOFTWARE">DIRECTOR OF SOFTWARE</option>
+                  <option value="TREASURER">TREASURER</option>
+                  <option value="DIRECTOR OF WELFARE">DIRECTOR OF WELFARE</option>
+                  <option value="ASSISTANT GENERAL SECRETARY">ASSISTANT GENERAL SECRETARY</option>
+                </select>
               </div>
               <div>
                 <label htmlFor="candidate-department" className="block text-sm font-medium text-gray-700 mb-1">Department</label>
@@ -1733,16 +2259,21 @@ const AdminDashboard = () => {
       {/* Results Modal */}
       {showResultsModal && (
         <Modal onClose={() => setShowResultsModal(false)} size="large">
-          <div className="p-6">
+          <div className="p-6" ref={resultsRef}>
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-medium text-gray-900">Election Results</h3>
+              <div>
+                <h3 className="text-2xl font-bold text-gray-900">Real-Time Election Results</h3>
+                <p className="text-sm text-gray-600">
+                  Last updated: {realTimeStats.lastUpdated ? realTimeStats.lastUpdated.toLocaleTimeString() : 'Never'}
+                </p>
+              </div>
               <div className="flex items-center space-x-4">
                 <button
                   onClick={handleExportResults}
                   className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                 >
                   <Download className="h-4 w-4" />
-                  <span>Export Results</span>
+                  <span>Export PDF</span>
                 </button>
                 <button
                   onClick={() => setShowResultsModal(false)}
@@ -1753,59 +2284,222 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <div className="mb-6">
-                <h4 className="text-xl font-semibold text-gray-900 mb-2">{electionTitle}</h4>
-                <div className="grid grid-cols-3 gap-4 text-sm text-gray-600">
-                  <div>Total Voters: <span className="font-semibold">{voters.length}</span></div>
-                  <div>Total Candidates: <span className="font-semibold">{candidates.length}</span></div>
-                  <div>Total Votes Cast: <span className="font-semibold">{results.reduce((sum, result) => sum + result.votes, 0)}</span></div>
+            {/* Election Summary */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6 mb-6">
+              <h4 className="text-xl font-semibold text-gray-900 mb-4">{electionTitle}</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">{voters.length}</div>
+                  <div className="text-sm text-gray-600">Total Voters</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{realTimeStats.totalVotesCast}</div>
+                  <div className="text-sm text-gray-600">Votes Cast</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-purple-600">{realTimeStats.voterTurnout.toFixed(1)}%</div>
+                  <div className="text-sm text-gray-600">Voter Turnout</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-orange-600">{candidates.length}</div>
+                  <div className="text-sm text-gray-600">Candidates</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Statistics Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">Leading Candidate</p>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {realTimeStats.leadingCandidate ? realTimeStats.leadingCandidate.candidateName : 'N/A'}
+                    </p>
+                  </div>
+                  <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
+                    <span className="text-yellow-600 font-bold">1st</span>
+                  </div>
                 </div>
               </div>
 
-              {results.length === 0 ? (
-                <div className="text-center py-8">
-                  <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500">No results available yet</p>
-                  <p className="text-sm text-gray-400">Start the election to see results</p>
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">Margin of Victory</p>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {realTimeStats.marginOfVictory} votes
+                    </p>
+                  </div>
+                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                    <span className="text-green-600 font-bold">Δ</span>
+                  </div>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  {results.map((result, index) => (
-                    <div key={result.candidateId} className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center space-x-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${
-                            index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-orange-600' : 'bg-blue-500'
-                          }`}>
-                            {index + 1}
-                          </div>
-                          <div>
-                            <h5 className="font-semibold text-gray-900">{result.candidateName}</h5>
-                            <p className="text-sm text-gray-600">
-                              {candidates.find(c => c._id === result.candidateId)?.position || 'Candidate'}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-2xl font-bold text-gray-900">{result.votes}</div>
-                          <div className="text-sm text-gray-600">votes</div>
-                        </div>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div 
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-500"
-                          style={{ width: `${result.percentage}%` }}
-                        ></div>
-                      </div>
-                      <div className="text-right mt-1">
-                        <span className="text-sm font-semibold text-gray-700">{result.percentage.toFixed(1)}%</span>
-                      </div>
-                    </div>
-                  ))}
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">Participation Rate</p>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {realTimeStats.participationRate.toFixed(1)}%
+                    </p>
+                  </div>
+                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                    <span className="text-blue-600 font-bold">%</span>
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
+
+            {/* Charts Section */}
+            {results.length > 0 && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                {/* Bar Chart */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                  <h5 className="text-lg font-semibold text-gray-900 mb-4">Vote Distribution</h5>
+                  <Bar
+                    data={{
+                      labels: results.map(r => r.candidateName),
+                      datasets: [{
+                        label: 'Votes',
+                        data: results.map(r => r.votes),
+                        backgroundColor: [
+                          'rgba(255, 206, 86, 0.8)',
+                          'rgba(201, 203, 207, 0.8)',
+                          'rgba(255, 159, 64, 0.8)',
+                          'rgba(54, 162, 235, 0.8)',
+                          'rgba(255, 99, 132, 0.8)',
+                        ],
+                        borderColor: [
+                          'rgba(255, 206, 86, 1)',
+                          'rgba(201, 203, 207, 1)',
+                          'rgba(255, 159, 64, 1)',
+                          'rgba(54, 162, 235, 1)',
+                          'rgba(255, 99, 132, 1)',
+                        ],
+                        borderWidth: 1
+                      }]
+                    }}
+                    options={{
+                      responsive: true,
+                      plugins: {
+                        legend: {
+                          display: false
+                        }
+                      },
+                      scales: {
+                        y: {
+                          beginAtZero: true
+                        }
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* Doughnut Chart */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                  <h5 className="text-lg font-semibold text-gray-900 mb-4">Vote Percentage</h5>
+                  <Doughnut
+                    data={{
+                      labels: results.map(r => r.candidateName),
+                      datasets: [{
+                        data: results.map(r => r.percentage),
+                        backgroundColor: [
+                          'rgba(255, 206, 86, 0.8)',
+                          'rgba(201, 203, 207, 0.8)',
+                          'rgba(255, 159, 64, 0.8)',
+                          'rgba(54, 162, 235, 0.8)',
+                          'rgba(255, 99, 132, 0.8)',
+                        ],
+                        borderColor: [
+                          'rgba(255, 206, 86, 1)',
+                          'rgba(201, 203, 207, 1)',
+                          'rgba(255, 159, 64, 1)',
+                          'rgba(54, 162, 235, 1)',
+                          'rgba(255, 99, 132, 1)',
+                        ],
+                        borderWidth: 2
+                      }]
+                    }}
+                    options={{
+                      responsive: true,
+                      plugins: {
+                        legend: {
+                          position: 'bottom'
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Detailed Results Table */}
+            {results.length === 0 ? (
+              <div className="text-center py-8">
+                <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-500">No results available yet</p>
+                <p className="text-sm text-gray-400">Start the election to see results</p>
+              </div>
+            ) : (
+              <div className="bg-white border border-gray-200 rounded-lg">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h5 className="text-lg font-semibold text-gray-900">Detailed Results</h5>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Candidate</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Votes</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {results.map((result, index) => (
+                        <tr key={result.candidateId} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${
+                              index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-orange-600' : 'bg-blue-500'
+                            }`}>
+                              {index + 1}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {result.candidateName}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {result.position || 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {result.department || 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                            {result.votes}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-700">
+                            {result.percentage.toFixed(1)}%
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div 
+                                className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                                style={{ width: `${result.percentage}%` }}
+                              ></div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-end mt-6">
               <button

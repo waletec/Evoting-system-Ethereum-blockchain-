@@ -20,13 +20,13 @@ exports.getAllVoters = async (req, res) => {
 // Create new voter
 exports.createVoter = async (req, res) => {
   try {
-    const { fullName, email, matricNumber, department, faculty } = req.body;
+    const { firstName, surname, matricNumber, department, faculty } = req.body;
 
     // Validation
-    if (!fullName || !email || !matricNumber) {
+    if (!firstName || !surname || !matricNumber) {
       return res.status(400).json({
         success: false,
-        message: 'Full name, email, and matric number are required'
+        message: 'First name, surname, and matric number are required'
       });
     }
 
@@ -41,8 +41,8 @@ exports.createVoter = async (req, res) => {
 
     // Create new voter
     const newVoter = new Voter({
-      fullName,
-      email,
+      firstName,
+      surname,
       matricNumber,
       department,
       faculty
@@ -95,8 +95,8 @@ exports.bulkCreateVoters = async (req, res) => {
 
         // Create new voter
         const newVoter = new Voter({
-          fullName: voterData.fullName,
-          email: voterData.email,
+          firstName: voterData.firstName,
+          surname: voterData.surname,
           matricNumber: voterData.matricNumber,
           department: voterData.department,
           faculty: voterData.faculty

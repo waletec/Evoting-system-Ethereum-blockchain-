@@ -4,7 +4,7 @@ import React from 'react';
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { Vote, User, Shield, CheckCircle, ArrowRight, Clock, Users, Lock, Eye, EyeOff, X, Loader2, BarChart3, AlertTriangle } from "lucide-react"
-import { registerVoter, checkHealth } from "../api"
+import { registerVoter, checkHealth, getCurrentElectionInfo } from "../api"
 
 const LandingPage = () => {
   const [election, setElection] = useState(null)
@@ -52,20 +52,63 @@ const LandingPage = () => {
   const loadActiveElection = async () => {
     try {
       setLoading(true)
-      // For now, we'll use a simple election object
-      // In the future, this could come from an API endpoint
-      const mockElection = {
-        id: 1,
-        title: "Student Union Election 2024",
-        description: "Annual student union leadership election for academic year 2024-2025",
-        startDate: "2024-03-01T09:00:00Z",
-        endDate: "2024-12-31T17:00:00Z", // Extended for testing
-        status: "active",
-        totalVoters: 1250,
-        totalVotes: 892,
+      
+      // Try to fetch election data from the database
+      try {
+        console.log("🔄 Making API call to getCurrentElectionInfo...")
+        const response = await getCurrentElectionInfo()
+        console.log("✅ API Response received:", response)
+        
+        if (response.success && response.election) {
+          const electionData = response.election
+          const startDate = electionData.startDate ? new Date(electionData.startDate) : new Date("2024-12-31T09:00:00Z");
+          const endDate = electionData.endDate ? new Date(electionData.endDate) : new Date(startDate.getTime() + 12 * 60 * 60 * 1000);
+          const election = {
+            id: 1,
+            title: electionData.title || "Election title not set",
+            description: electionData.description || "description not set",
+            startDate: startDate.toISOString(),
+            endDate: endDate.toISOString(),
+            status: "active",
+            totalVoters: electionData.totalVoters || 0,
+            totalVotes: 0, // This will be updated when votes are cast
+          }
+          setElection(election)
+        } else {
+          // Fallback to mock data if no active election
+          const mockElection = {
+            id: 1,
+            title: "Election in Progress",
+            description: "Election is currently active",
+            startDate: "2024-12-31T09:00:00Z",
+            endDate: "2024-12-31T21:00:00Z",
+            status: "active",
+            totalVoters: 0,
+            totalVotes: 0,
+          }
+          setElection(mockElection)
+        }
+      } catch (apiError) {
+        console.error("❌ Failed to fetch election from API:", apiError)
+        console.error("🔍 API Error details:", {
+          message: apiError.message,
+          status: apiError.response?.status,
+          data: apiError.response?.data,
+          stack: apiError.stack
+        })
+        // Fallback to mock data
+        const mockElection = {
+          id: 1,
+          title: "Election in Progress",
+          description: "Election is currently active",
+          startDate: "2024-12-31T09:00:00Z",
+          endDate: "2024-12-31T21:00:00Z",
+          status: "active",
+          totalVoters: 0,
+          totalVotes: 0,
+        }
+        setElection(mockElection)
       }
-
-      setElection(mockElection)
     } catch (error) {
       console.error("Failed to load election:", error)
       setError("Failed to load election information")
@@ -137,15 +180,14 @@ const LandingPage = () => {
       setVerifying(true)
       setError("")
 
+      const sessionData = {
+        code: verificationCode,
+        matricNumber: matricNumber,
+        timestamp: new Date().toISOString(),
+      }
+      
       // Store voter data in localStorage for the voting session
-      localStorage.setItem(
-        "voterSession",
-        JSON.stringify({
-          code: verificationCode,
-          matricNumber: matricNumber,
-          timestamp: new Date().toISOString(),
-        }),
-      )
+      localStorage.setItem("voterSession", JSON.stringify(sessionData))
 
       // Navigate to voting page
       navigate("/vote")
@@ -163,16 +205,14 @@ const LandingPage = () => {
       return
     }
 
+    const sessionData = {
+      code: generatedCode,
+      matricNumber: matricNumber,
+      timestamp: new Date().toISOString(),
+    }
+    
     // Store the generated code and proceed to voting
-    localStorage.setItem(
-      "voterSession",
-      JSON.stringify({
-        code: generatedCode,
-        matricNumber: matricNumber,
-        timestamp: new Date().toISOString(),
-      }),
-    )
-
+    localStorage.setItem("voterSession", JSON.stringify(sessionData))
     navigate("/vote")
   }
 
@@ -240,7 +280,7 @@ const LandingPage = () => {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid lg:grid-cols-2 gap-8">
+          <div className="grid lg:grid-cols-2 gap-8">
           {/* Left Column - Election Info */}
           <div className="space-y-6">
             {election && (

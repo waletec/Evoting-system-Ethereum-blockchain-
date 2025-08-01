@@ -5,9 +5,12 @@ const voteSchema = new mongoose.Schema({
   matricNumber: {
     type: String,
     required: true,
-    unique: true,
   },
   candidate: {
+    type: String,
+    required: true,
+  },
+  position: {
     type: String,
     required: true,
   },
@@ -16,5 +19,8 @@ const voteSchema = new mongoose.Schema({
     default: Date.now,
   }
 });
+
+// Compound index to ensure one vote per position per voter
+voteSchema.index({ matricNumber: 1, position: 1 }, { unique: true });
 
 module.exports = mongoose.model('Vote', voteSchema);

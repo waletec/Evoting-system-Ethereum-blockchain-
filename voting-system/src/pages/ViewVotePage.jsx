@@ -195,20 +195,41 @@ const ViewVotePage = () => {
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm font-medium text-gray-700">Voter ID:</span>
-                      <span className="text-sm text-gray-900">{voteData.voterId}</span>
+                      <span className="text-sm font-medium text-gray-700">Matric Number:</span>
+                      <span className="text-sm text-gray-900">{voteData.votes?.[0]?.matricNumber || voteData.matricNumber}</span>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm font-medium text-gray-700">Candidate:</span>
-                      <span className="text-sm text-gray-900 font-semibold">{voteData.candidate}</span>
+                      <span className="text-sm font-medium text-gray-700">Total Votes Cast:</span>
+                      <span className="text-sm text-gray-900 font-semibold">{voteData.totalVotes || 1}</span>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <span className="text-sm font-medium text-gray-700">Vote Time:</span>
                       <span className="text-sm text-gray-900">
-                        {new Date(voteData.timestamp * 1000).toLocaleString()}
+                        {voteData.votes?.[0]?.timestamp ? new Date(voteData.votes[0].timestamp).toLocaleString() : 
+                         voteData.timestamp ? new Date(voteData.timestamp).toLocaleString() : 'Not available'}
                       </span>
                     </div>
                   </div>
+
+                  {/* Display votes by position */}
+                  {voteData.votes && voteData.votes.length > 0 && (
+                    <div className="mt-4">
+                      <h4 className="text-sm font-medium text-gray-700 mb-3">Your Votes by Position:</h4>
+                      <div className="space-y-2">
+                        {voteData.votes.map((vote, index) => (
+                          <div key={index} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                            <div>
+                              <span className="text-sm font-medium text-blue-900">{vote.position}</span>
+                              <p className="text-sm text-blue-700">{vote.candidate}</p>
+                            </div>
+                            <span className="text-xs text-blue-600">
+                              {vote.timestamp ? new Date(vote.timestamp).toLocaleDateString() : 'N/A'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                     <div className="flex items-start space-x-2">

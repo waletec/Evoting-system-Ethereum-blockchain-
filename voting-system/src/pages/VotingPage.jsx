@@ -16,7 +16,7 @@ import {
   Info,
   Loader2,
 } from "lucide-react"
-import { castVote } from "../api"
+import { castVote, getCurrentElectionInfo } from "../api"
 
 const VotingPage = () => {
   const [voterSession, setVoterSession] = useState(null)
@@ -37,18 +37,22 @@ const VotingPage = () => {
   useEffect(() => {
     // Check for valid voter session
     const sessionData = localStorage.getItem("voterSession")
+    console.log("🔍 Session data from localStorage:", sessionData)
+    
     if (!sessionData) {
+      console.log("❌ No session data found, redirecting to home")
       navigate("/")
       return
     }
 
     try {
       const session = JSON.parse(sessionData)
+      console.log("✅ Parsed session:", session)
       setVoterSession(session)
       setCode(session.code)
       loadElectionData()
     } catch (error) {
-      console.error("Invalid session data:", error)
+      console.error("❌ Invalid session data:", error)
       navigate("/")
     }
   }, [navigate])
@@ -67,47 +71,53 @@ const VotingPage = () => {
     try {
       setLoading(true)
 
-      // For now, we'll use a simple election object
-      // In the future, this could come from an API endpoint
-      const mockElection = {
-        id: 1,
-        title: "Student Union Election 2024",
-        description: "Annual student union leadership election",
-        endDate: "2024-12-31T17:00:00Z",
-        positions: [
-          {
-            id: 1,
-            title: "President",
-            description: "Student Union President - Lead the student body and represent student interests",
-            maxVotesPerVoter: 1,
-            candidates: [
-              {
-                id: 1,
-                fullName: "John Doe",
-                department: "Computer Science",
-                matricNumber: "CS/2021/001",
-                imageUrl: "/placeholder.svg?height=150&width=150",
-                bio: "Passionate about student welfare and academic excellence.",
-                manifesto:
-                  "I will work to improve student facilities, create more opportunities for academic and personal growth, and ensure every student's voice is heard in university decisions.",
-              },
-              {
-                id: 2,
-                fullName: "Jane Smith",
-                department: "Engineering",
-                matricNumber: "ENG/2021/002",
-                imageUrl: "/placeholder.svg?height=150&width=150",
-                bio: "Dedicated to creating an inclusive campus environment.",
-                manifesto:
-                  "My focus will be on mental health support, diversity initiatives, sustainable campus practices, and bridging the gap between students and administration.",
-              },
-            ],
-          },
-        ],
+      // Fetch election data from the database
+      const response = await getCurrentElectionInfo()
+      
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to load election data')
       }
 
-      setElection(mockElection)
-      initializeVoteSelections(mockElection)
+      // Transform the API response to match our expected format
+      const electionData = response.election
+      const candidatesData = response.candidates
+
+      // Group candidates by position
+      const positionsMap = {}
+      candidatesData.forEach(candidate => {
+        if (!positionsMap[candidate.position]) {
+          positionsMap[candidate.position] = []
+        }
+        positionsMap[candidate.position].push({
+          id: candidate.id,
+          fullName: candidate.fullName,
+          department: candidate.department,
+          matricNumber: candidate.id, // Using ID as matric number for now
+          imageUrl: candidate.image || "/placeholder.svg?height=150&width=150",
+          bio: `Candidate for ${candidate.position}`,
+          manifesto: `I am running for ${candidate.position} position.`,
+        })
+      })
+
+      // Convert to positions array
+      const positions = Object.keys(positionsMap).map((position, index) => ({
+        id: index + 1,
+        title: position,
+        description: `${position} - Lead and represent the student body`,
+        maxVotesPerVoter: 1,
+        candidates: positionsMap[position]
+      }))
+
+      const election = {
+        id: 1,
+        title: electionData.title || "Election in Progress",
+        description: electionData.description || "Annual student union leadership election",
+        endDate: electionData.endDate ? electionData.endDate : (electionData.startDate ? new Date(new Date(electionData.startDate).getTime() + 12 * 60 * 60 * 1000).toISOString() : "2024-12-31T21:00:00Z"),
+        positions: positions
+      }
+
+      setElection(election)
+      initializeVoteSelections(election)
     } catch (error) {
       console.error("Failed to load election data:", error)
       setError("Failed to load election information")
@@ -211,29 +221,58 @@ const VotingPage = () => {
       setIsSubmitting(true)
       setError("")
 
-      // Get the selected candidate for the current position
-      const currentSelection = voteSelections[currentPositionIndex]
-      if (!currentSelection || currentSelection.candidateIds.length === 0) {
-        setError("Please select a candidate")
+      // If matricNumber is empty, try to get it from the backend using the code
+      let actualMatricNumber = voterSession.matricNumber
+      if (!actualMatricNumber || actualMatricNumber.trim() === '') {
+        try {
+          const response = await fetch('http://localhost:4000/api/get-matric-by-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: voterSession.code })
+          })
+          if (response.ok) {
+            const data = await response.json()
+            actualMatricNumber = data.matricNumber
+          }
+        } catch (error) {
+          console.error("Error retrieving matric number:", error)
+        }
+      }
+
+      // Check if all positions have been voted for
+      const unvotedPositions = voteSelections.filter(selection => selection.candidateIds.length === 0)
+      if (unvotedPositions.length > 0) {
+        setError(`Please vote for all positions: ${unvotedPositions.map(s => s.positionTitle).join(', ')}`)
         return
       }
 
-      const selectedCandidateId = currentSelection.candidateIds[0]
-      const selectedCandidate = election.positions[currentPositionIndex].candidates.find(
-        (c) => c.id === selectedCandidateId
-      )
+      // Submit votes for all positions
+      for (let i = 0; i < voteSelections.length; i++) {
+        const selection = voteSelections[i]
+        const selectedCandidateId = selection.candidateIds[0]
+        const selectedCandidate = election.positions[i].candidates.find(
+          (c) => c.id === selectedCandidateId
+        )
 
-      if (!selectedCandidate) {
-        setError("Invalid candidate selection")
-        return
+        if (!selectedCandidate) {
+          setError(`Invalid candidate selection for ${selection.positionTitle}`)
+          return
+        }
+
+        const apiData = {
+          matricNumber: actualMatricNumber,
+          code: voterSession.code,
+          candidate: selectedCandidate.fullName,
+          position: selection.positionTitle
+        }
+
+        // Use the backend API for each position
+        await castVote(
+          apiData.matricNumber,
+          apiData.code,
+          apiData.candidate
+        )
       }
-
-      // Use the backend API
-      await castVote(
-        voterSession.matricNumber,
-        voterSession.code,
-        selectedCandidate.fullName
-      )
 
       // Clear session data
       localStorage.removeItem("voterSession")

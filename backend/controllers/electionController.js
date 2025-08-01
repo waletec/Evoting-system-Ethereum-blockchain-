@@ -105,6 +105,7 @@ exports.startElection = async (req, res) => {
     // Update election status
     election.status = 'active';
     election.startDate = new Date();
+    election.endDate = new Date(election.startDate.getTime() + 12 * 60 * 60 * 1000); // 12 hours from start
     election.totalVoters = voterCount;
     election.totalCandidates = candidateCount;
     await election.save();
@@ -165,18 +166,40 @@ exports.endElection = async (req, res) => {
 // Reset system (delete all data)
 exports.resetSystem = async (req, res) => {
   try {
-    // Deactivate all elections
-    await Election.updateMany({}, { isActive: false });
+    // Delete all elections
+    await Election.deleteMany({});
     
-    // Deactivate all candidates
-    await Candidate.updateMany({}, { isActive: false });
+    // Delete all candidates
+    await Candidate.deleteMany({});
     
-    // Deactivate all voters
-    await Voter.updateMany({}, { isActive: false });
+    // Delete all voters
+    await Voter.deleteMany({});
+
+    // Delete all users (voter registrations)
+    const User = require('../models/User');
+    await User.deleteMany({});
+
+    // Delete all votes from database
+    const Vote = require('../models/Vote');
+    await Vote.deleteMany({});
+
+    // Clear blockchain data
+    try {
+      const { connectToNetwork } = require('../fabric/connection');
+      const network = await connectToNetwork();
+      const contract = network.getContract('voting');
+      
+      // Call blockchain reset function
+      await contract.submitTransaction('resetAllVotes');
+      console.log('✅ Blockchain data cleared successfully');
+    } catch (blockchainError) {
+      console.error('⚠️ Blockchain reset error:', blockchainError.message);
+      // Continue even if blockchain reset fails
+    }
 
     res.json({
       success: true,
-      message: 'System reset successfully'
+      message: 'System reset successfully (Database and Blockchain cleared)'
     });
 
   } catch (error) {

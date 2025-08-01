@@ -30,7 +30,7 @@ exports.registerVoter = async (req, res) => {
     }
 
     // Verify surname matches (case-insensitive)
-    const voterSurname = uploadedVoter.fullName.split(' ').pop().toLowerCase();
+    const voterSurname = uploadedVoter.surname.toLowerCase();
     const providedSurname = surname.toLowerCase();
     
     if (voterSurname !== providedSurname) {
@@ -67,8 +67,8 @@ exports.registerVoter = async (req, res) => {
       message: 'Voter registered successfully. Use the code to vote.',
       code: code, // Return the plain code for testing purposes
       voterInfo: {
-        fullName: uploadedVoter.fullName,
-        email: uploadedVoter.email,
+        firstName: uploadedVoter.firstName,
+        surname: uploadedVoter.surname,
         department: uploadedVoter.department,
         faculty: uploadedVoter.faculty
       }
@@ -81,9 +81,9 @@ exports.registerVoter = async (req, res) => {
 
 exports.castVote = async (req, res) => {
   try {
-    const { matricNumber, code, candidate } = req.body;
+    const { matricNumber, code, candidate, position } = req.body;
 
-    if (!matricNumber || !code || !candidate) {
+    if (!matricNumber || !code || !candidate || !position) {
       return res.status(400).json({ error: 'All fields are required'  });
     }
 
@@ -93,14 +93,16 @@ exports.castVote = async (req, res) => {
       return res.status(401).json({ error: 'Invalid voter credentials' });
     }
 
-    if (user.hasVoted) {
-      return res.status(403).json({ error: 'You have already voted' });
-    }
-
     // Check if the code is correct
     const isCodeCorrect = await bcrypt.compare(code, user.code);
     if (!isCodeCorrect) {
       return res.status(401).json({ error: 'Invalid code' });
+    }
+
+    // Check if user has already voted for this position
+    const existingVote = await Vote.findOne({ matricNumber, position });
+    if (existingVote) {
+      return res.status(403).json({ error: `You have already voted for ${position}` });
     }
 
     try {
@@ -108,7 +110,7 @@ exports.castVote = async (req, res) => {
       const network = await connectToNetwork();
       const contract = network.getContract('voting');
 
-      await contract.submitTransaction('castVote', matricNumber, candidate);
+      await contract.submitTransaction('castVote', matricNumber, candidate, position);
       console.log('✅ Vote submitted to blockchain');
     } catch (fabricError) {
       console.error('⚠️ Fabric connection error:', fabricError.message);
@@ -116,16 +118,56 @@ exports.castVote = async (req, res) => {
     }
 
     // Save vote in MongoDB
-    const vote = new Vote({ matricNumber, candidate });
+    const vote = new Vote({ matricNumber, candidate, position });
     await vote.save();
 
-    // Mark user as voted
-    user.hasVoted = true;
-    await user.save();
+    // Check if user has voted for all positions (optional - for tracking completion)
+    const totalPositions = 10; // We have 10 positions
+    const userVotes = await Vote.countDocuments({ matricNumber });
+    
+    if (userVotes >= totalPositions) {
+      // Mark user as completed voting for all positions
+      user.hasVoted = true;
+      await user.save();
+    }
 
     return res.status(200).json({ message: 'Vote cast successfully' });
   } catch (error) {
     console.error('Error casting vote:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+exports.getMatricByCode = async (req, res) => {
+  try {
+    const { code } = req.body;
+    
+    if (!code) {
+      return res.status(400).json({ error: 'Code is required' });
+    }
+
+    // Find user by code (we need to compare hashed codes)
+    const users = await User.find({});
+    let foundUser = null;
+    
+    for (const user of users) {
+      const isCodeCorrect = await bcrypt.compare(code, user.code);
+      if (isCodeCorrect) {
+        foundUser = user;
+        break;
+      }
+    }
+
+    if (!foundUser) {
+      return res.status(404).json({ error: 'User not found with this code' });
+    }
+
+    return res.status(200).json({ 
+      matricNumber: foundUser.matricNumber,
+      surname: foundUser.surname 
+    });
+  } catch (error) {
+    console.error('Error getting matric by code:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -167,11 +209,11 @@ exports.viewMyVote = async (req, res) => {
     } catch (fabricError) {
       console.error('⚠️ Fabric connection error:', fabricError.message);
       // Fallback to MongoDB
-      const vote = await Vote.findOne({ matricNumber });
-      if (!vote) {
-        return res.status(404).json({ error: 'No vote found for this voter' });
+      const votes = await Vote.find({ matricNumber });
+      if (!votes || votes.length === 0) {
+        return res.status(404).json({ error: 'No votes found for this voter' });
       }
-      return res.status(200).json(vote);
+      return res.status(200).json({ votes: votes, totalVotes: votes.length });
     }
   } catch (error) {
     console.error('Error viewing vote:', error);
@@ -182,12 +224,12 @@ exports.viewMyVote = async (req, res) => {
 // Get current election information for voting dashboard
 exports.getCurrentElectionInfo = async (req, res) => {
   try {
-    // Get the current active election
-    const election = await Election.findOne({ isActive: true, status: 'active' });
+    // Get the current election (active or draft)
+    const election = await Election.findOne({ isActive: true });
     
     if (!election) {
       return res.status(404).json({ 
-        error: 'No active election found' 
+        error: 'No election found' 
       });
     }
 
@@ -202,7 +244,7 @@ exports.getCurrentElectionInfo = async (req, res) => {
       success: true,
       election: {
         title: election.title,
-        description: election.description,
+        description: election.description || "",
         startDate: election.startDate,
         totalVoters: voterCount,
         totalCandidates: candidates.length

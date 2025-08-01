@@ -1,16 +1,15 @@
 const mongoose = require('mongoose');
 
 const voterSchema = new mongoose.Schema({
-  fullName: {
+  firstName: {
     type: String,
     required: true,
     trim: true
   },
-  email: {
+  surname: {
     type: String,
     required: true,
-    trim: true,
-    lowercase: true
+    trim: true
   },
   matricNumber: {
     type: String,

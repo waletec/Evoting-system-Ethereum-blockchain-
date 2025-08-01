@@ -39,6 +39,15 @@ export const getResults = async () => {
   }
 };
 
+export const getCurrentElectionInfo = async () => {
+  try {
+    const response = await api.get('/election-info');
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error;
+  }
+};
+
 export const viewVote = async (matricNumber) => {
   try {
     const response = await api.post('/view-vote', { matricNumber });
