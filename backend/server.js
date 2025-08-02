@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const dotenv = require('dotenv');
 const connectDB = require('./db');
 const voteRoutes = require('./routes/voteRoutes');
@@ -16,8 +17,12 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:5173', // Frontend URL
+  credentials: true // Allow cookies
+}));
 app.use(express.json());
+app.use(cookieParser());
 
 // Connect to MongoDB
 connectDB();

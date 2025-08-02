@@ -36,8 +36,16 @@ const adminSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  isSuperAdmin: {
+    type: Boolean,
+    default: false
+  },
   lastLogin: {
     type: Date
+  },
+  lastActivity: {
+    type: Date,
+    default: Date.now
   },
   createdAt: {
     type: Date,

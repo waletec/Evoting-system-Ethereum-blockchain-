@@ -1,5 +1,6 @@
 const Admin = require('../models/Admin');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 // Admin Login
 exports.login = async (req, res) => {
@@ -32,15 +33,32 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Update last login
+    // Update last login and activity
     admin.lastLogin = new Date();
+    admin.lastActivity = new Date();
     await admin.save();
 
-    // Return admin data (without password)
+    // Generate JWT token
+    const token = jwt.sign(
+      { adminId: admin._id, username: admin.username },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '30m' } // 30 minutes
+    );
+
+    // Set token in cookie
+    res.cookie('adminToken', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 30 * 60 * 1000, // 30 minutes
+      sameSite: 'strict'
+    });
+
+    // Return admin data and token
     res.json({
       success: true,
       message: 'Login successful',
-      admin: admin.toPublicJSON()
+      admin: admin.toPublicJSON(),
+      token: token
     });
 
   } catch (error) {
@@ -350,14 +368,8 @@ exports.deleteAdmin = async (req, res) => {
 // Initialize default super admin
 exports.initializeSuperAdmin = async (req, res) => {
   try {
-    // Check if super admin already exists
-    const existingSuperAdmin = await Admin.findOne({ role: 'super_admin' });
-    if (existingSuperAdmin) {
-      return res.status(400).json({
-        success: false,
-        message: 'Super admin already exists'
-      });
-    }
+    // Delete existing super admin if exists
+    await Admin.deleteMany({ role: 'super_admin' });
 
     // Create default super admin
     const superAdmin = new Admin({
@@ -365,7 +377,8 @@ exports.initializeSuperAdmin = async (req, res) => {
       password: 'superadmin123',
       email: 'superadmin@votingsystem.com',
       fullName: 'Super Administrator',
-      role: 'super_admin'
+      role: 'super_admin',
+      isSuperAdmin: true
     });
 
     await superAdmin.save();
@@ -378,6 +391,97 @@ exports.initializeSuperAdmin = async (req, res) => {
 
   } catch (error) {
     console.error('Initialize super admin error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Admin Logout
+exports.logout = async (req, res) => {
+  try {
+    // Clear the token cookie
+    res.clearCookie('adminToken');
+    
+    // If we have admin info from middleware, update last activity
+    if (req.admin) {
+      req.admin.lastActivity = new Date();
+      await req.admin.save();
+    }
+
+    res.json({
+      success: true,
+      message: 'Logout successful'
+    });
+  } catch (error) {
+    console.error('Admin logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Get current admin session
+exports.getCurrentAdmin = async (req, res) => {
+  try {
+    if (!req.admin) {
+      return res.status(401).json({
+        success: false,
+        message: 'No active session'
+      });
+    }
+
+    res.json({
+      success: true,
+      admin: req.admin.toPublicJSON()
+    });
+  } catch (error) {
+    console.error('Get current admin error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Refresh admin session
+exports.refreshSession = async (req, res) => {
+  try {
+    if (!req.admin) {
+      return res.status(401).json({
+        success: false,
+        message: 'No active session'
+      });
+    }
+
+    // Update last activity
+    req.admin.lastActivity = new Date();
+    await req.admin.save();
+
+    // Generate new token
+    const token = jwt.sign(
+      { adminId: req.admin._id, username: req.admin.username },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '30m' }
+    );
+
+    // Set new token in cookie
+    res.cookie('adminToken', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 30 * 60 * 1000,
+      sameSite: 'strict'
+    });
+
+    res.json({
+      success: true,
+      message: 'Session refreshed',
+      token: token
+    });
+  } catch (error) {
+    console.error('Refresh session error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

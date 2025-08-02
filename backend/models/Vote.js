@@ -20,7 +20,19 @@ const voteSchema = new mongoose.Schema({
   }
 });
 
-// Compound index to ensure one vote per position per voter
+// Remove any existing single matricNumber unique index and create compound index
 voteSchema.index({ matricNumber: 1, position: 1 }, { unique: true });
+
+// Add performance indexes for faster queries
+voteSchema.index({ matricNumber: 1 }); // For distinct queries
+voteSchema.index({ position: 1 }); // For position-based queries
+voteSchema.index({ timestamp: -1 }); // For time-based queries
+
+// Ensure no single matricNumber unique index exists
+voteSchema.on('index', function(error) {
+  if (error) {
+    console.error('Vote model index error:', error);
+  }
+});
 
 module.exports = mongoose.model('Vote', voteSchema);
