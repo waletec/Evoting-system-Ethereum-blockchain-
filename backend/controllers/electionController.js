@@ -1,6 +1,7 @@
 const Election = require('../models/Election');
 const Candidate = require('../models/Candidate');
 const Voter = require('../models/Voter');
+const logger = require('../utils/logger');
 
 // Get current election
 exports.getCurrentElection = async (req, res) => {
@@ -19,7 +20,7 @@ exports.getCurrentElection = async (req, res) => {
       election
     });
   } catch (error) {
-    console.error('Get current election error:', error);
+    logger.error('Get current election error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -64,7 +65,7 @@ exports.createOrUpdateElection = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Create/update election error:', error);
+    logger.error('Create/update election error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -91,9 +92,9 @@ exports.startElection = async (req, res) => {
       const contract = network.getContract('votecc');
       // Test blockchain connection with a simple query
       await contract.evaluateTransaction('allVotes');
-      console.log('✅ Blockchain connectivity verified for election start');
+      logger.info('✅ Blockchain connectivity verified for election start');
     } catch (blockchainError) {
-      console.error('❌ Blockchain connectivity check failed:', blockchainError.message);
+      logger.error('❌ Blockchain connectivity check failed:', blockchainError.message);
       return res.status(503).json({
         success: false,
         message: 'Cannot start election: Blockchain system is offline or unavailable. Please ensure the blockchain network is running before starting the election.',
@@ -140,7 +141,7 @@ exports.startElection = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Start election error:', error);
+    logger.error('Start election error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -172,7 +173,7 @@ exports.endElection = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('End election error:', error);
+    logger.error('End election error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -208,9 +209,9 @@ exports.resetSystem = async (req, res) => {
       
       // Call blockchain reset function
       await contract.submitTransaction('resetVotes', JSON.stringify([]));
-      console.log('✅ Blockchain data cleared successfully');
+      logger.info('✅ Blockchain data cleared successfully');
     } catch (blockchainError) {
-      console.error('⚠️ Blockchain reset error:', blockchainError.message);
+      logger.error('⚠️ Blockchain reset error:', blockchainError.message);
       // Continue even if blockchain reset fails
     }
 
@@ -220,7 +221,7 @@ exports.resetSystem = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Reset system error:', error);
+    logger.error('Reset system error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -248,7 +249,7 @@ exports.getElectionStats = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get election stats error:', error);
+    logger.error('Get election stats error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

@@ -8,6 +8,7 @@ const Election = require('../models/Election'); // (MongoDB model for election d
 
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const logger = require('../utils/logger');
 
 exports.registerVoter = async (req, res) => {
   try {
@@ -49,6 +50,7 @@ exports.registerVoter = async (req, res) => {
       
       // Update the user's code
       existingUser.code = hashedNewCode;
+      existingUser.codeIssuedAt = new Date();
       await existingUser.save();
       
       return res.status(200).json({
@@ -75,6 +77,7 @@ exports.registerVoter = async (req, res) => {
       matricNumber,
       surname,
       code: hashedCode,
+      codeIssuedAt: new Date(),
       hasVoted: false,
       voterId: uploadedVoter._id // Link to the uploaded voter record
     });
@@ -94,7 +97,7 @@ exports.registerVoter = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error validating voter:', error);
+    logger.error('Error validating voter:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -119,6 +122,14 @@ exports.castVote = async (req, res) => {
       return res.status(401).json({ error: 'Invalid code' });
     }
 
+    // Ensure the code was recently issued from landing page
+    const CODE_TTL_MINUTES = parseInt(process.env.CODE_TTL_MINUTES || '30', 10); // default 30 minutes
+    const issuedAt = user.codeIssuedAt || user.updatedAt || user.createdAt;
+    const isExpired = Date.now() - new Date(issuedAt).getTime() > CODE_TTL_MINUTES * 60 * 1000;
+    if (isExpired) {
+      return res.status(401).json({ error: 'Voting code has expired. Please re-validate on the landing page to get a new code.' });
+    }
+
     // Check if user has already voted for this position
     const existingVote = await Vote.findOne({ matricNumber, position });
     if (existingVote) {
@@ -136,13 +147,13 @@ exports.castVote = async (req, res) => {
         const network = await connectToNetwork();
         const contract = network.getContract('votecc');
         await contract.submitTransaction('castVote', matricNumber, candidate);
-        console.log('✅ Vote submitted to blockchain');
+        logger.info('✅ Vote submitted to blockchain');
         blockchainSuccess = true;
       })();
 
       await Promise.race([fabricPromise, timeoutPromise]);
     } catch (fabricError) {
-      console.error('❌ Fabric connection error:', fabricError.message);
+      logger.error('❌ Fabric connection error:', fabricError.message);
       throw new Error(`Blockchain recording failed: ${fabricError.message}. Please ensure the blockchain network is running and try again.`);
     }
 
@@ -150,7 +161,7 @@ exports.castVote = async (req, res) => {
     if (blockchainSuccess) {
       const vote = new Vote({ matricNumber, candidate, position });
       await vote.save();
-      console.log('✅ Vote saved to MongoDB');
+      logger.info('✅ Vote saved to MongoDB');
     }
 
     // Check if user has voted for all positions (optional - for tracking completion)
@@ -167,7 +178,7 @@ exports.castVote = async (req, res) => {
 
     return res.status(200).json({ message: 'Vote cast successfully' });
   } catch (error) {
-    console.error('Error casting vote:', error);
+    logger.error('Error casting vote:', error);
     
     // Handle duplicate key error specifically
     if (error.code === 11000) {
@@ -206,7 +217,7 @@ exports.clearAllVotes = async (req, res) => {
       deletedCount: deleteResult.deletedCount 
     });
   } catch (error) {
-    console.error('Error clearing votes:', error);
+    logger.error('Error clearing votes:', error);
     res.status(500).json({ error: 'Failed to clear votes' });
   }
 };
@@ -240,7 +251,7 @@ exports.getMatricByCode = async (req, res) => {
       surname: foundUser.surname 
     });
   } catch (error) {
-    console.error('Error getting matric by code:', error);
+    logger.error('Error getting matric by code:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -249,7 +260,7 @@ exports.getVoteResult = async (req, res) => {
   try {
     // Skip blockchain for read operations since it's not running
     // This will significantly improve performance
-    console.log('📊 Using MongoDB fallback for results (blockchain disabled)');
+    logger.info('📊 Using MongoDB fallback for results (blockchain disabled)');
     
     // Fallback to MongoDB results with proper aggregation
       
@@ -341,7 +352,7 @@ exports.getVoteResult = async (req, res) => {
         lastUpdated: new Date().toISOString()
       });
   } catch (error) {
-    console.error('Error fetching results:', error);
+    logger.error('Error fetching results:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };            
@@ -379,7 +390,7 @@ exports.viewMyVote = async (req, res) => {
 
       return res.status(200).json(parsedResult);
     } catch (fabricError) {
-      console.error('⚠️ Fabric connection error:', fabricError.message);
+      logger.error('⚠️ Fabric connection error:', fabricError.message);
       // Fallback to MongoDB
       const votes = await Vote.find({ matricNumber: foundUser.matricNumber });
       if (!votes || votes.length === 0) {
@@ -395,7 +406,7 @@ exports.viewMyVote = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error viewing vote:', error);
+    logger.error('Error viewing vote:', error);
     res.status(500).json({ error: 'Could not fetch vote' });
   }
 };
@@ -443,7 +454,7 @@ exports.getCurrentElectionInfo = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error getting election info:', error);
+    logger.error('Error getting election info:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -478,6 +489,17 @@ exports.verifyVotingCode = async (req, res) => {
       });
     }
 
+    // Check code freshness
+    const CODE_TTL_MINUTES = parseInt(process.env.CODE_TTL_MINUTES || '30', 10);
+    const issuedAt = user.codeIssuedAt || user.updatedAt || user.createdAt;
+    const isExpired = Date.now() - new Date(issuedAt).getTime() > CODE_TTL_MINUTES * 60 * 1000;
+    if (isExpired) {
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Voting code has expired. Please re-validate on the landing page to get a new code.' 
+      });
+    }
+
     // Check if user has already voted
     if (user.hasVoted) {
       return res.status(403).json({ 
@@ -495,7 +517,7 @@ exports.verifyVotingCode = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error verifying voting code:', error);
+    logger.error('Error verifying voting code:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Internal server error' 

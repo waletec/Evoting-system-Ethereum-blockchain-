@@ -1,4 +1,5 @@
 const Voter = require('../models/Voter');
+const logger = require('../utils/logger');
 
 // Get all voters
 exports.getAllVoters = async (req, res) => {
@@ -9,7 +10,7 @@ exports.getAllVoters = async (req, res) => {
       voters
     });
   } catch (error) {
-    console.error('Get voters error:', error);
+    logger.error('Get voters error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -57,7 +58,7 @@ exports.createVoter = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Create voter error:', error);
+    logger.error('Create voter error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -117,7 +118,7 @@ exports.bulkCreateVoters = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Bulk create voters error:', error);
+    logger.error('Bulk create voters error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -165,7 +166,7 @@ exports.updateVoter = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Update voter error:', error);
+    logger.error('Update voter error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -195,7 +196,7 @@ exports.deleteVoter = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Delete voter error:', error);
+    logger.error('Delete voter error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -214,7 +215,7 @@ exports.deleteAllVoters = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Delete all voters error:', error);
+    logger.error('Delete all voters error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

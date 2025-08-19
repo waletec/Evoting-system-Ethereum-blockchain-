@@ -1,6 +1,7 @@
 const Admin = require('../models/Admin');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const logger = require('../utils/logger');
 
 // Admin Login
 exports.login = async (req, res) => {
@@ -62,7 +63,7 @@ exports.login = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Admin login error:', error);
+    logger.error('Admin login error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -119,7 +120,7 @@ exports.createAdmin = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Create admin error:', error);
+    logger.error('Create admin error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -137,7 +138,7 @@ exports.getAllAdmins = async (req, res) => {
       admins
     });
   } catch (error) {
-    console.error('Get admins error:', error);
+    logger.error('Get admins error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -175,7 +176,7 @@ exports.resetPassword = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Reset password error:', error);
+    logger.error('Reset password error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -222,7 +223,7 @@ exports.changePassword = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Change password error:', error);
+    logger.error('Change password error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -287,7 +288,7 @@ exports.updateAdmin = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Update admin error:', error);
+    logger.error('Update admin error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -316,7 +317,7 @@ exports.deactivateAdmin = async (req, res) => {
       message: 'Admin deactivated successfully'
     });
   } catch (error) {
-    console.error('Deactivate admin error:', error);
+    logger.error('Deactivate admin error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -357,7 +358,7 @@ exports.deleteAdmin = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Deactivate admin error:', error);
+    logger.error('Deactivate admin error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -390,7 +391,7 @@ exports.initializeSuperAdmin = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Initialize super admin error:', error);
+    logger.error('Initialize super admin error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -415,7 +416,7 @@ exports.logout = async (req, res) => {
       message: 'Logout successful'
     });
   } catch (error) {
-    console.error('Admin logout error:', error);
+    logger.error('Admin logout error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -438,7 +439,7 @@ exports.getCurrentAdmin = async (req, res) => {
       admin: req.admin.toPublicJSON()
     });
   } catch (error) {
-    console.error('Get current admin error:', error);
+    logger.error('Get current admin error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -481,7 +482,7 @@ exports.refreshSession = async (req, res) => {
       token: token
     });
   } catch (error) {
-    console.error('Refresh session error:', error);
+    logger.error('Refresh session error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

@@ -4,6 +4,7 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const dotenv = require('dotenv');
 const connectDB = require('./db');
+const logger = require('./utils/logger');
 const voteRoutes = require('./routes/voteRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const candidateRoutes = require('./routes/candidateRoutes');
@@ -18,9 +19,20 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // Middleware
+// Dynamic CORS: support multiple comma-separated origins via CORS_ORIGINS
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173')
+  .split(',')
+  .map(s => s.trim());
+
 app.use(cors({
-  origin: 'http://localhost:5173', // Frontend URL
-  credentials: true // Allow cookies
+  origin: function(origin, callback) {
+    // Allow non-browser requests (no origin) and allowed origins
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true
 }));
 app.use(express.json());
 app.use(cookieParser());
@@ -56,7 +68,7 @@ app.get('/health', async (req, res) => {
       await contract.submitTransaction('allVotes');
       blockchainStatus = 'connected';
     } catch (blockchainError) {
-      console.log('⚠️ Blockchain health check failed:', blockchainError.message);
+      logger.warn('⚠️ Blockchain health check failed:', blockchainError.message);
       blockchainStatus = 'disconnected';
     }
 
@@ -67,7 +79,7 @@ app.get('/health', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Health check error:', error);
+    logger.error('Health check error:', error);
     res.status(500).json({ 
       status: 'unhealthy',
       error: error.message,
@@ -89,7 +101,7 @@ app.get('/api/blockchain-status', async (req, res) => {
       await contract.submitTransaction('allVotes');
       blockchainStatus = 'connected';
     } catch (blockchainError) {
-      console.log('⚠️ Blockchain status check failed:', blockchainError.message);
+      logger.warn('⚠️ Blockchain status check failed:', blockchainError.message);
       blockchainStatus = 'disconnected';
       error = blockchainError.message;
     }
@@ -100,7 +112,7 @@ app.get('/api/blockchain-status', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Blockchain status check error:', error);
+    logger.error('Blockchain status check error:', error);
     res.status(500).json({ 
       status: 'error',
       error: error.message,
@@ -111,13 +123,13 @@ app.get('/api/blockchain-status', async (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
+  logger.error('Error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/health`);
+  logger.info(`🚀 Server running on http://localhost:${PORT}`);
+  logger.info(`📊 Health check: http://localhost:${PORT}/health`);
 });
 
 

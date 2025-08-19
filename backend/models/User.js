@@ -16,6 +16,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  codeIssuedAt: {
+    type: Date,
+    default: Date.now
+  },
   hasVoted: {
     type: Boolean,
     default: false
