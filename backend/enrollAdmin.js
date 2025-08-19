@@ -5,20 +5,33 @@ const path = require('path');
 
 async function enrollAdmin() {
   try {
-    const ccpPath = path.resolve(__dirname, 'connection.json');
+    const ccpPath = process.env.FABRIC_CCP
+      ? path.resolve(process.env.FABRIC_CCP)
+      : path.resolve(__dirname, 'connection.json');
     const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
 
-    // Create a new CA client for interacting with the CA
-    const caInfo = ccp.certificateAuthorities['ca.org1.example.com']; // Update if your CA name is different
-    const caTLSCACerts = caInfo.tlsCACerts.pem;
+    // Determine organization and CA from CCP or env
+    const defaultOrg = ccp.client && ccp.client.organization ? ccp.client.organization : Object.keys(ccp.organizations)[0];
+    const orgName = process.env.FABRIC_ORG || defaultOrg;
+    const mspId = process.env.FABRIC_MSPID || ccp.organizations[orgName].mspid;
+
+    const caNameEnv = process.env.FABRIC_CA_NAME;
+    const caNameAuto = Object.keys(ccp.certificateAuthorities)[0];
+    const caName = caNameEnv || caNameAuto;
+    const caInfo = ccp.certificateAuthorities[caName];
+
+    // Create CA client with TLS certificates (if provided)
+    const caTLSCACerts = caInfo.tlsCACerts && caInfo.tlsCACerts.pem ? caInfo.tlsCACerts.pem : undefined;
     const ca = new FabricCAServices(
       caInfo.url,
-      { trustedRoots: caTLSCACerts, verify: false },
+      caTLSCACerts ? { trustedRoots: caTLSCACerts, verify: false } : { verify: false },
       caInfo.caName
     );
 
     // Create a new file system based wallet
-    const walletPath = path.join(__dirname, 'wallet');
+    const walletPath = process.env.FABRIC_WALLET
+      ? path.resolve(process.env.FABRIC_WALLET)
+      : path.join(__dirname, 'wallet');
     const wallet = await Wallets.newFileSystemWallet(walletPath);
 
     // Check if admin is already enrolled
@@ -39,7 +52,7 @@ async function enrollAdmin() {
         certificate: enrollment.certificate,
         privateKey: enrollment.key.toBytes()
       },
-      mspId: 'Org1MSP',
+      mspId: mspId,
       type: 'X.509'
     };
 

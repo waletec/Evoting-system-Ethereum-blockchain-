@@ -17,8 +17,8 @@ function App() {
         <Route path="/result" element={<RealTimeResult />} />
         <Route path="/vote" element={<VotingPage />} />
         <Route path="/view-vote" element={<ViewVotePage />} />
-        <Route path="/admin/login" element={<AdminLogin />} />
-        <Route path="/admin/dashboard" element={<AdminDashboard />} />
+        <Route path="/admin-login" element={<AdminLogin />} />
+        <Route path="/admin-dashboard" element={<AdminDashboard />} />
       </Routes>
     </Router>
   );

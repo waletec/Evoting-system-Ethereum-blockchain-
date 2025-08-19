@@ -5,20 +5,22 @@ import React from 'react';
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Eye, ArrowLeft, CheckCircle, AlertTriangle, Loader2, Shield, Vote, User } from "lucide-react"
-import { viewVote } from "../api"
+import { viewVote, getBlockchainStatus } from "../api"
+import BlockchainStatus from "../components/BlockchainStatus"
 
 const ViewVotePage = () => {
-  const [matricNumber, setMatricNumber] = useState("")
+  const [votingCode, setVotingCode] = useState("")
   const [loading, setLoading] = useState(false)
   const [voteData, setVoteData] = useState(null)
   const [error, setError] = useState("")
+  const [blockchainStatus, setBlockchainStatus] = useState("checking")
   const navigate = useNavigate()
 
   const handleViewVote = async (e) => {
     e.preventDefault()
     
-    if (!matricNumber.trim()) {
-      setError("Please enter your matric number")
+    if (!votingCode.trim()) {
+      setError("Please enter your voting code")
       return
     }
 
@@ -27,7 +29,17 @@ const ViewVotePage = () => {
       setError("")
       setVoteData(null)
 
-      const data = await viewVote(matricNumber.trim())
+      // Check blockchain status first
+      try {
+        const blockchainResponse = await getBlockchainStatus();
+        setBlockchainStatus(blockchainResponse.status);
+        console.log('🔗 Blockchain status:', blockchainResponse.status);
+      } catch (blockchainError) {
+        console.error('❌ Failed to check blockchain status:', blockchainError);
+        setBlockchainStatus('disconnected');
+      }
+
+      const data = await viewVote(votingCode.trim())
       setVoteData(data)
     } catch (error) {
       console.error("Failed to view vote:", error)
@@ -61,9 +73,12 @@ const ViewVotePage = () => {
                 <p className="text-sm text-gray-500">Check your voting record</p>
               </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <Shield className="h-5 w-5 text-green-600" />
-              <span className="text-sm text-green-600 font-medium">Secure Verification</span>
+            <div className="flex items-center space-x-4">
+              <BlockchainStatus showDetails={false} />
+              <div className="flex items-center space-x-2">
+                <Shield className="h-5 w-5 text-green-600" />
+                <span className="text-sm text-green-600 font-medium">Secure Verification</span>
+              </div>
             </div>
           </div>
         </div>
@@ -82,9 +97,24 @@ const ViewVotePage = () => {
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-gray-900">Find Your Vote</h2>
-                  <p className="text-gray-600">Enter your matric number to view your voting record</p>
+                  <p className="text-gray-600">Enter your voting code to view your voting record</p>
                 </div>
               </div>
+
+              {/* Blockchain Status Warning */}
+              {blockchainStatus === 'disconnected' && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-start space-x-3">
+                    <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
+                    <div>
+                      <h4 className="text-sm font-medium text-red-900 mb-1">Blockchain Connection Required</h4>
+                      <p className="text-sm text-red-700">
+                        Vote verification requires blockchain connection. Some vote data may not be available.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Error Message */}
               {error && (
@@ -98,16 +128,16 @@ const ViewVotePage = () => {
 
               <form onSubmit={handleViewVote} className="space-y-4">
                 <div>
-                  <label htmlFor="matricNumber" className="block text-sm font-medium text-gray-700 mb-2">
-                    Matric Number
+                  <label htmlFor="votingCode" className="block text-sm font-medium text-gray-700 mb-2">
+                    Voting Code
                   </label>
                   <input
                     type="text"
-                    id="matricNumber"
-                    value={matricNumber}
-                    onChange={(e) => setMatricNumber(e.target.value)}
+                    id="votingCode"
+                    value={votingCode}
+                    onChange={(e) => setVotingCode(e.target.value)}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter your matric number"
+                    placeholder="Enter your voting code"
                     required
                   />
                 </div>
@@ -141,8 +171,8 @@ const ViewVotePage = () => {
                     <span className="text-xs font-bold text-blue-600">1</span>
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Enter your matric number</p>
-                    <p className="text-sm text-gray-600">Use the same matric number you used during registration</p>
+                    <p className="text-sm font-medium text-gray-900">Enter your voting code</p>
+                    <p className="text-sm text-gray-600">Use the voting code you received during registration</p>
                   </div>
                 </div>
                 <div className="flex items-start space-x-3">
@@ -254,7 +284,7 @@ const ViewVotePage = () => {
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">No Vote Data</h3>
                   <p className="text-gray-600">
-                    Enter your matric number above to view your voting record.
+                    Enter your generated code above to view your voting record.
                   </p>
                 </div>
               </div>

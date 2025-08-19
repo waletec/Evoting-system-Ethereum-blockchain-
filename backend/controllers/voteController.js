@@ -126,27 +126,32 @@ exports.castVote = async (req, res) => {
     }
 
     // Connect to Fabric and submit vote with timeout
+    let blockchainSuccess = false;
     try {
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Blockchain connection timeout')), 2000)
+        setTimeout(() => reject(new Error('Blockchain connection timeout')), 5000)
       );
       
       const fabricPromise = (async () => {
         const network = await connectToNetwork();
-        const contract = network.getContract('voting');
-        await contract.submitTransaction('castVote', matricNumber, candidate, position);
+        const contract = network.getContract('votecc');
+        await contract.submitTransaction('castVote', matricNumber, candidate);
         console.log('✅ Vote submitted to blockchain');
+        blockchainSuccess = true;
       })();
 
       await Promise.race([fabricPromise, timeoutPromise]);
     } catch (fabricError) {
-      console.error('⚠️ Fabric connection error:', fabricError.message);
-      // Continue with MongoDB only if Fabric fails
+      console.error('❌ Fabric connection error:', fabricError.message);
+      throw new Error(`Blockchain recording failed: ${fabricError.message}. Please ensure the blockchain network is running and try again.`);
     }
 
-    // Save vote in MongoDB
-    const vote = new Vote({ matricNumber, candidate, position });
-    await vote.save();
+    // Only save to MongoDB if blockchain recording was successful
+    if (blockchainSuccess) {
+      const vote = new Vote({ matricNumber, candidate, position });
+      await vote.save();
+      console.log('✅ Vote saved to MongoDB');
+    }
 
     // Check if user has voted for all positions (optional - for tracking completion)
     const Candidate = require('../models/Candidate');
@@ -367,9 +372,9 @@ exports.viewMyVote = async (req, res) => {
 
     try {
       const network = await connectToNetwork();
-      const contract = network.getContract('voting');
+      const contract = network.getContract('votecc');
 
-      const result = await contract.evaluateTransaction('viewVote', foundUser.matricNumber);
+      const result = await contract.submitTransaction('queryVote', foundUser.matricNumber);
       const parsedResult = JSON.parse(result.toString());
 
       return res.status(200).json(parsedResult);

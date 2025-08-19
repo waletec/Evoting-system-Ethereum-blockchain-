@@ -3,8 +3,12 @@ const path = require('path');
 const { Gateway, Wallets } = require('fabric-network');
 const fs = require('fs');
 
-const ccpPath = path.resolve(__dirname, '..', 'connection.json'); // Your network config
-const walletPath = path.join(__dirname, '..', 'wallet');
+const ccpPath = process.env.FABRIC_CCP
+  ? path.resolve(process.env.FABRIC_CCP)
+  : path.resolve(__dirname, '..', 'connection.json'); // Your network config
+const walletPath = process.env.FABRIC_WALLET
+  ? path.resolve(process.env.FABRIC_WALLET)
+  : path.join(__dirname, '..', 'wallet');
 
 // Connection cache to reuse connections
 let cachedNetwork = null;
@@ -30,13 +34,18 @@ async function connectToNetwork() {
     }
 
     const gateway = new Gateway();
+    const identityLabel = process.env.FABRIC_IDENTITY || 'admin';
+    const discoveryEnabled = (process.env.FABRIC_DISCOVERY_ENABLED || 'true').toLowerCase() === 'true';
+    const asLocalhost = (process.env.FABRIC_AS_LOCALHOST || 'false').toLowerCase() === 'true';
+
     await gateway.connect(ccp, {
       wallet,
-      identity: 'admin',
-      discovery: { enabled: true, asLocalhost: true }
+      identity: identityLabel,
+      discovery: { enabled: discoveryEnabled, asLocalhost }
     });
 
-    const network = await gateway.getNetwork('mychannel'); // Adjust channel name if different
+    const channelName = process.env.FABRIC_CHANNEL || 'mychannel';
+    const network = await gateway.getNetwork(channelName);
     
     // Cache the connection
     cachedNetwork = network;

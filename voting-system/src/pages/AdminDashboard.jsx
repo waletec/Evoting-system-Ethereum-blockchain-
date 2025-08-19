@@ -69,8 +69,14 @@ import {
   createOrUpdateElection,
   startElection,
   resetSystem as resetSystemAPI,
-  getElectionStats
+  getElectionStats,
+  getCurrentAdmin,
+  adminLogout,
+  refreshAdminSession,
+  checkHealth,
+  getBlockchainStatus
 } from '../api';
+import BlockchainStatus from '../components/BlockchainStatus';
 
 const AdminDashboard = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -92,6 +98,8 @@ const AdminDashboard = () => {
     lastUpdated: null
   });
   const [resultsRef] = useState(useRef(null));
+  const [backendStatus, setBackendStatus] = useState('checking');
+  const [blockchainStatus, setBlockchainStatus] = useState('checking');
 
   // Admin management states
   const [showAdminManagement, setShowAdminManagement] = useState(false);
@@ -156,25 +164,39 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const auth = localStorage.getItem("adminAuth");
-    const adminData = localStorage.getItem("adminData");
-    
-    if (auth === "true" && adminData) {
+    const checkAuth = async () => {
       try {
-      const admin = JSON.parse(adminData);
+        const token = localStorage.getItem("adminToken");
+        if (!token) {
+          setIsLoading(false);
+          navigate("/admin-login");
+          return;
+        }
+
+        // Verify current session
+        const response = await getCurrentAdmin();
+        if (response.success) {
       setIsAuthenticated(true);
-      setAdminUsername(admin.username || "Administrator");
-      setCurrentAdmin(admin);
+          setAdminUsername(response.admin.username || "Administrator");
+          setCurrentAdmin(response.admin);
       loadExistingData();
-      } catch (error) {
-        console.error('AdminDashboard: Error parsing admin data:', error)
-        navigate("/admin/login");
-      }
     } else {
-      navigate("/admin/login");
-    }
-    setIsLoading(false);
-  }, []);
+          // Session invalid, redirect to login
+          localStorage.removeItem("adminToken");
+          navigate("/admin-login");
+        }
+      } catch (error) {
+        console.error("Auth check error:", error);
+        // Session expired or invalid, redirect to login
+        localStorage.removeItem("adminToken");
+        navigate("/admin-login");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [navigate]);
 
   // Load admins when admin management is shown
   useEffect(() => {
@@ -197,8 +219,53 @@ const AdminDashboard = () => {
     };
   }, [electionStarted, candidates, voters]);
 
+  // System status polling
+  useEffect(() => {
+    // Check system status immediately
+    checkSystemStatus();
+    
+    // Then poll every 60 seconds
+    const interval = setInterval(checkSystemStatus, 60000);
+    
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
+
+  const checkSystemStatus = async () => {
+    try {
+      // Check backend health
+      const healthResponse = await checkHealth();
+      setBackendStatus('online');
+      
+      // Check blockchain status
+      try {
+        const blockchainResponse = await getBlockchainStatus();
+        setBlockchainStatus(blockchainResponse.status);
+        console.log('🔗 Blockchain status:', blockchainResponse.status);
+      } catch (blockchainError) {
+        console.error('❌ Failed to check blockchain status:', blockchainError);
+        setBlockchainStatus('disconnected');
+      }
+    } catch (error) {
+      console.error('❌ Backend health check failed:', error);
+      setBackendStatus('offline');
+      setBlockchainStatus('disconnected');
+    }
+  };
+
+  const refreshSystemStatus = async () => {
+    setBackendStatus('checking');
+    setBlockchainStatus('checking');
+    await checkSystemStatus();
+    showToast('System status refreshed', 'success');
+  };
+
   const loadExistingData = async () => {
     try {
+      // Check system status first
+      await checkSystemStatus();
+
       // Load election data from database
       const electionResponse = await getCurrentElection();
       if (electionResponse.success && electionResponse.election) {
@@ -223,11 +290,15 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("adminAuth");
-    localStorage.removeItem("adminUsername");
-    localStorage.removeItem("adminData");
-    navigate("/admin/login");
+  const handleLogout = async () => {
+    try {
+      await adminLogout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      localStorage.removeItem("adminToken");
+      navigate("/admin-login");
+    }
   };
 
   const handleSetElectionTitle = async () => {
@@ -848,7 +919,7 @@ const AdminDashboard = () => {
               <div>
                 <h1 className="text-3xl font-bold text-gray-900">Welcome, {adminUsername}!</h1>
                 <p className="text-sm text-gray-600">
-                  Admin Dashboard - E-Voting System
+                  Admin Dashboard - Blockchain Voting System
                   {currentAdmin && (
                     <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
                       currentAdmin.role === 'super_admin' 
@@ -862,6 +933,30 @@ const AdminDashboard = () => {
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              {/* System Status Indicators */}
+              <div className="flex items-center space-x-3">
+                {/* Backend Status */}
+                <div className={`flex items-center space-x-2 px-3 py-1 rounded-full border text-sm font-medium ${
+                  backendStatus === 'online' 
+                    ? 'text-green-600 bg-green-50 border-green-200' 
+                    : backendStatus === 'offline'
+                    ? 'text-red-600 bg-red-50 border-red-200'
+                    : 'text-blue-600 bg-blue-50 border-blue-200'
+                }`}>
+                  <div className={`w-2 h-2 rounded-full ${
+                    backendStatus === 'online' ? 'bg-green-600' : 
+                    backendStatus === 'offline' ? 'bg-red-600' : 'bg-blue-600'
+                  }`}></div>
+                  <span>
+                    {backendStatus === 'online' ? 'Backend Online' : 
+                     backendStatus === 'offline' ? 'Backend Offline' : 'Checking...'}
+                  </span>
+                </div>
+                
+                {/* Blockchain Status */}
+                <BlockchainStatus showDetails={false} />
+              </div>
+
               {isSuperAdmin() && (
                 <button
                   onClick={() => setShowAdminManagement(!showAdminManagement)}
@@ -893,6 +988,41 @@ const AdminDashboard = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* System Status Warnings */}
+        {(backendStatus === 'offline' || blockchainStatus === 'disconnected') && (
+          <div className="mb-8 space-y-4">
+            {backendStatus === 'offline' && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-start space-x-3">
+                  <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-medium text-red-900 mb-1">Backend Server Offline</h4>
+                    <p className="text-sm text-red-700">
+                      The backend server is currently offline. Some admin functions may not work properly. 
+                      Please ensure the backend server is running.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {blockchainStatus === 'disconnected' && (
+              <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                <div className="flex items-start space-x-3">
+                  <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-medium text-orange-900 mb-1">Blockchain Network Disconnected</h4>
+                    <p className="text-sm text-orange-700">
+                      The blockchain network is currently disconnected. Voting operations will not be recorded on the blockchain. 
+                      Please ensure the blockchain network is running for full functionality.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Admin Management Section */}
         {showAdminManagement && isSuperAdmin() && (
           <div className="mb-8 bg-white rounded-lg shadow p-6">
@@ -1116,6 +1246,67 @@ const AdminDashboard = () => {
 
         {/* Management Buttons */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {/* System Status Card */}
+          <div className="bg-white border-2 rounded-lg">
+            <div className="p-6 text-center">
+              <div className="flex justify-between items-start mb-4">
+                <div></div>
+                <button
+                  onClick={refreshSystemStatus}
+                  className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                  title="Refresh system status"
+                >
+                  <Loader2 className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex items-center justify-center mb-4">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                  backendStatus === 'online' && blockchainStatus === 'connected' 
+                    ? 'bg-green-100' 
+                    : backendStatus === 'offline' 
+                    ? 'bg-red-100' 
+                    : 'bg-orange-100'
+                }`}>
+                  {backendStatus === 'online' && blockchainStatus === 'connected' ? (
+                    <CheckCircle className="h-8 w-8 text-green-600" />
+                  ) : backendStatus === 'offline' ? (
+                    <AlertTriangle className="h-8 w-8 text-red-600" />
+                  ) : (
+                    <AlertTriangle className="h-8 w-8 text-orange-600" />
+                  )}
+                </div>
+              </div>
+              <h3 className="font-semibold mb-2">System Status</h3>
+              <div className="space-y-2">
+                <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  backendStatus === 'online' 
+                    ? 'bg-green-100 text-green-800' 
+                    : backendStatus === 'offline'
+                    ? 'bg-red-100 text-red-800'
+                    : 'bg-blue-100 text-blue-800'
+                }`}>
+                  <div className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                    backendStatus === 'online' ? 'bg-green-600' : 
+                    backendStatus === 'offline' ? 'bg-red-600' : 'bg-blue-600'
+                  }`}></div>
+                  Backend: {backendStatus === 'online' ? 'Online' : backendStatus === 'offline' ? 'Offline' : 'Checking'}
+                </div>
+                <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  blockchainStatus === 'connected' 
+                    ? 'bg-green-100 text-green-800' 
+                    : blockchainStatus === 'disconnected'
+                    ? 'bg-red-100 text-red-800'
+                    : 'bg-blue-100 text-blue-800'
+                }`}>
+                  <div className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                    blockchainStatus === 'connected' ? 'bg-green-600' : 
+                    blockchainStatus === 'disconnected' ? 'bg-red-600' : 'bg-blue-600'
+                  }`}></div>
+                  Blockchain: {blockchainStatus === 'connected' ? 'Connected' : blockchainStatus === 'disconnected' ? 'Disconnected' : 'Checking'}
+                </div>
+              </div>
+            </div>
+          </div>
           {/* Election Title Button */}
           <div
             onClick={() => !electionStarted && setShowTitleModal(true)}

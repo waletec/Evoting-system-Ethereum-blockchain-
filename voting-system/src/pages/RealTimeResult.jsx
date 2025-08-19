@@ -18,7 +18,7 @@ import {
   Legend,
 } from "recharts"
 import { Trophy, Users, Vote, Clock, Shield, ArrowLeft, RefreshCw, TrendingUp, Award, Loader2 } from "lucide-react"
-import { getResults } from "../api"
+import { getResults, getCurrentElectionInfo } from "../api"
 
 const RealTimeResults = () => {
   const [election, setElection] = useState(null)
@@ -57,7 +57,7 @@ const RealTimeResults = () => {
       setResults(transformedResults)
       setTotalVotes(data.totalVotes || 0)
       setVoterTurnout(data.voterTurnout || 0)
-      setLastUpdated(new Date())
+      setLastUpdated(new Date(data.lastUpdated) || new Date())
 
       // Get actual election data from API
       const electionInfoResponse = await getCurrentElectionInfo();
@@ -72,11 +72,11 @@ const RealTimeResults = () => {
         });
       } else {
         // Fallback to mock data if API fails
-        const mockElection = {
-          id: 1,
+      const mockElection = {
+        id: 1,
           title: "Election in Progress",
           description: "Election is currently active",
-          status: "active",
+        status: "active",
           totalRegisteredVoters: 0,
           endDate: new Date().toISOString(),
         };
@@ -86,39 +86,33 @@ const RealTimeResults = () => {
       console.error("Failed to load results:", error)
       setError("Failed to load election results. Please try again.")
 
-      // Fallback to mock data for demonstration
-      const mockResults = [
-        {
-          positionId: 1,
-          positionTitle: "Position",
-          candidates: [
-            {
-              id: 1,
-              fullName: "Candidate 1",
-              department: "Department",
-              votes: 0,
-              percentage: 0,
-            },
-            {
-              id: 2,
-              fullName: "Candidate 2",
-              department: "Department",
-              votes: 0,
-              percentage: 0,
-            },
-          ],
-        },
-      ]
-      setResults(mockResults)
-      setTotalVotes(631)
-      setVoterTurnout(50.5)
+      // Set empty results instead of mock data
+      setResults([])
+      setTotalVotes(0)
+      setVoterTurnout(0)
     } finally {
       setLoading(false)
     }
   }
 
   const transformResultsData = (data) => {
-    // Transform the backend data format to match our component expectations
+    // Handle the new backend response format
+    if (data.success && data.results && Array.isArray(data.results)) {
+      // Backend already provides structured results
+      return data.results.map((position, index) => ({
+        positionId: index + 1,
+        positionTitle: position.positionTitle,
+        candidates: position.candidates.map((candidate, candidateIndex) => ({
+          id: candidate.id || candidateIndex + 1,
+          fullName: candidate.fullName,
+          department: candidate.department || "Student",
+          votes: candidate.votes || 0,
+          percentage: candidate.percentage || 0,
+        }))
+      }))
+    }
+
+    // Fallback for old format or error cases
     if (!data.votes || !Array.isArray(data.votes)) {
       return []
     }
@@ -182,6 +176,54 @@ const RealTimeResults = () => {
         <div className="text-center">
           <Loader2 className="h-16 w-16 animate-spin text-blue-600 mx-auto mb-4" />
           <p className="text-gray-600">Loading election results...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show message when no results are available yet
+  if (!loading && results.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+        {/* Header */}
+        <div className="bg-white shadow-sm border-b">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center py-4">
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={() => navigate("/")}
+                  className="flex items-center space-x-2 text-gray-600 hover:text-gray-800 transition-colors"
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                  <span>Back to Home</span>
+                </button>
+                <div className="h-6 w-px bg-gray-300"></div>
+                <div>
+                  <h1 className="text-xl font-bold text-gray-900">Live Election Results</h1>
+                  <p className="text-sm text-gray-500">Real-time voting statistics</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="bg-white rounded-xl shadow-sm border p-6 text-center">
+            <div className="bg-yellow-100 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+              <Clock className="h-8 w-8 text-yellow-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">No Results Yet</h2>
+            <p className="text-gray-600 mb-4">
+              No votes have been cast yet. Results will appear here once voting begins.
+            </p>
+            <button
+              onClick={loadResults}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Refresh Results
+            </button>
+          </div>
         </div>
       </div>
     )

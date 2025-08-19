@@ -16,7 +16,8 @@ import {
   Info,
   Loader2,
 } from "lucide-react"
-import { castVote, getCurrentElectionInfo } from "../api"
+import { castVote, getCurrentElectionInfo, getBlockchainStatus } from "../api"
+import BlockchainStatus from "../components/BlockchainStatus"
 
 const VotingPage = () => {
   const [voterSession, setVoterSession] = useState(null)
@@ -30,7 +31,7 @@ const VotingPage = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [candidate, setCandidate] = useState("")
-  const [code, setCode] = useState("")
+  const [blockchainStatus, setBlockchainStatus] = useState('checking')
 
   const navigate = useNavigate()
 
@@ -49,7 +50,6 @@ const VotingPage = () => {
       const session = JSON.parse(sessionData)
       console.log("✅ Parsed session:", session)
       setVoterSession(session)
-      setCode(session.code)
       loadElectionData()
     } catch (error) {
       console.error("❌ Invalid session data:", error)
@@ -70,9 +70,26 @@ const VotingPage = () => {
   const loadElectionData = async () => {
     try {
       setLoading(true)
+      setError("")
 
-      // Fetch election data from the database
-      const response = await getCurrentElectionInfo()
+      // Check blockchain status first
+      try {
+        const blockchainResponse = await getBlockchainStatus();
+        setBlockchainStatus(blockchainResponse.status);
+        console.log('🔗 Blockchain status:', blockchainResponse.status);
+      } catch (blockchainError) {
+        console.error('❌ Failed to check blockchain status:', blockchainError);
+        setBlockchainStatus('disconnected');
+      }
+
+      // Fetch election data from the database with timeout
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout')), 10000)
+      );
+      
+      const dataPromise = getCurrentElectionInfo();
+      
+      const response = await Promise.race([dataPromise, timeoutPromise]);
       
       if (!response.success) {
         throw new Error(response.error || 'Failed to load election data')
@@ -81,6 +98,8 @@ const VotingPage = () => {
       // Transform the API response to match our expected format
       const electionData = response.election
       const candidatesData = response.candidates
+      
+      console.log('🔍 Candidates data received:', candidatesData)
 
       // Group candidates by position
       const positionsMap = {}
@@ -93,7 +112,7 @@ const VotingPage = () => {
           fullName: candidate.fullName,
           department: candidate.department,
           matricNumber: candidate.id, // Using ID as matric number for now
-          imageUrl: candidate.image || "/placeholder.svg?height=150&width=150",
+          imageUrl: candidate.image || "https://via.placeholder.com/150x150?text=No+Image",
           bio: `Candidate for ${candidate.position}`,
           manifesto: `I am running for ${candidate.position} position.`,
         })
@@ -221,23 +240,10 @@ const VotingPage = () => {
       setIsSubmitting(true)
       setError("")
 
-      // If matricNumber is empty, try to get it from the backend using the code
+
+
+      // Use matric number from session
       let actualMatricNumber = voterSession.matricNumber
-      if (!actualMatricNumber || actualMatricNumber.trim() === '') {
-        try {
-          const response = await fetch('http://localhost:4000/api/get-matric-by-code', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code: voterSession.code })
-          })
-          if (response.ok) {
-            const data = await response.json()
-            actualMatricNumber = data.matricNumber
-          }
-        } catch (error) {
-          console.error("Error retrieving matric number:", error)
-        }
-      }
 
       // Check if all positions have been voted for
       const unvotedPositions = voteSelections.filter(selection => selection.candidateIds.length === 0)
@@ -251,26 +257,33 @@ const VotingPage = () => {
         const selection = voteSelections[i]
         const selectedCandidateId = selection.candidateIds[0]
         const selectedCandidate = election.positions[i].candidates.find(
-          (c) => c.id === selectedCandidateId
-        )
+        (c) => c.id === selectedCandidateId
+      )
 
-        if (!selectedCandidate) {
+      if (!selectedCandidate) {
           setError(`Invalid candidate selection for ${selection.positionTitle}`)
-          return
-        }
+        return
+      }
 
         const apiData = {
           matricNumber: actualMatricNumber,
-          code: voterSession.code,
+          code: voterSession.code, // Use the code from session
           candidate: selectedCandidate.fullName,
           position: selection.positionTitle
         }
 
+        // Validate all fields are present
+        if (!apiData.matricNumber || !apiData.code || !apiData.candidate || !apiData.position) {
+          setError(`Missing required fields for ${selection.positionTitle}`)
+          return
+        }
+
         // Use the backend API for each position
-        await castVote(
+      await castVote(
           apiData.matricNumber,
           apiData.code,
-          apiData.candidate
+          apiData.candidate,
+          apiData.position
         )
       }
 
@@ -385,6 +398,7 @@ const VotingPage = () => {
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              <BlockchainStatus showDetails={false} />
               <div className="flex items-center space-x-2 text-sm text-gray-600">
                 <Clock className="h-4 w-4" />
                 <span>{timeRemaining}</span>
@@ -446,8 +460,21 @@ const VotingPage = () => {
               >
                 <div className="flex items-start space-x-4">
                   <div className="flex-shrink-0">
-                    <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center">
-                      <User className="h-8 w-8 text-gray-500" />
+                    <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">
+                      {candidate.imageUrl && candidate.imageUrl !== "https://via.placeholder.com/150x150?text=No+Image" ? (
+                        <img 
+                          src={candidate.imageUrl} 
+                          alt={candidate.fullName}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.nextSibling.style.display = 'flex';
+                          }}
+                        />
+                      ) : null}
+                      <div className={`w-full h-full flex items-center justify-center ${candidate.imageUrl && candidate.imageUrl !== "https://via.placeholder.com/150x150?text=No+Image" ? 'hidden' : ''}`}>
+                        <User className="h-8 w-8 text-gray-500" />
+                      </div>
                     </div>
                   </div>
                   <div className="flex-1">
@@ -470,6 +497,22 @@ const VotingPage = () => {
           </div>
         </div>
 
+        {/* Blockchain Status Warning */}
+        {blockchainStatus === 'disconnected' && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-start space-x-3">
+              <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-medium text-red-900 mb-1">Blockchain Connection Required</h4>
+                <p className="text-sm text-red-700">
+                  Voting is currently unavailable because the blockchain network is not connected. 
+                  Please ensure the blockchain network is running before attempting to vote.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Navigation */}
         <div className="flex justify-between items-center">
           <button
@@ -488,7 +531,7 @@ const VotingPage = () => {
             {currentPositionIndex === election.positions.length - 1 ? (
               <button
                 onClick={() => setShowConfirmation(true)}
-                disabled={!canProceedToNext()}
+                disabled={!canProceedToNext() || blockchainStatus === 'disconnected'}
                 className="flex items-center space-x-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <Vote className="h-5 w-5" />
@@ -542,6 +585,18 @@ const VotingPage = () => {
               })}
             </div>
 
+
+
+            {/* Blockchain Status in Confirmation */}
+            {blockchainStatus === 'disconnected' && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                  <span className="text-red-800">Blockchain connection required to submit vote</span>
+                </div>
+              </div>
+            )}
+
             {/* Error Message */}
             {error && (
               <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -562,7 +617,7 @@ const VotingPage = () => {
               </button>
               <button
                 onClick={handleSubmitVotes}
-                disabled={isSubmitting}
+                disabled={isSubmitting || blockchainStatus === 'disconnected'}
                 className="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
               >
                 {isSubmitting ? (

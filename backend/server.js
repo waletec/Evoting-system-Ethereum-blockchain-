@@ -9,6 +9,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const candidateRoutes = require('./routes/candidateRoutes');
 const voterRoutes = require('./routes/voterRoutes');
 const electionRoutes = require('./routes/electionRoutes');
+const { connectToNetwork } = require('./blockchain/fabricUtils');
 
 
 dotenv.config();
@@ -44,12 +45,68 @@ app.get('/', (req, res) => {
 });
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy',
-    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    timestamp: new Date().toISOString()
-  });
+app.get('/health', async (req, res) => {
+  try {
+    // Check blockchain connectivity
+    let blockchainStatus = 'disconnected';
+    try {
+      const network = await connectToNetwork();
+      const contract = network.getContract('votecc');
+      // Try a simple query to verify the connection is working
+      await contract.submitTransaction('allVotes');
+      blockchainStatus = 'connected';
+    } catch (blockchainError) {
+      console.log('⚠️ Blockchain health check failed:', blockchainError.message);
+      blockchainStatus = 'disconnected';
+    }
+
+    res.json({ 
+      status: 'healthy',
+      mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      blockchain: blockchainStatus,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Health check error:', error);
+    res.status(500).json({ 
+      status: 'unhealthy',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Blockchain status endpoint
+app.get('/api/blockchain-status', async (req, res) => {
+  try {
+    let blockchainStatus = 'disconnected';
+    let error = null;
+    
+    try {
+      const network = await connectToNetwork();
+      const contract = network.getContract('votecc');
+      // Try a simple query to verify the connection is working
+      await contract.submitTransaction('allVotes');
+      blockchainStatus = 'connected';
+    } catch (blockchainError) {
+      console.log('⚠️ Blockchain status check failed:', blockchainError.message);
+      blockchainStatus = 'disconnected';
+      error = blockchainError.message;
+    }
+
+    res.json({ 
+      status: blockchainStatus,
+      error: error,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Blockchain status check error:', error);
+    res.status(500).json({ 
+      status: 'error',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Error handling middleware

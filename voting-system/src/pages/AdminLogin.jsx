@@ -40,9 +40,8 @@ const AdminLogin = () => {
       const response = await adminLogin(formData.username, formData.password)
 
       if (response.success) {
-        localStorage.setItem('adminAuth', 'true')
-        localStorage.setItem('adminData', JSON.stringify(response.admin))
-        navigate('/admin/dashboard')
+        // Token is automatically stored by the API function
+        navigate('/admin-dashboard')
       } else {
         setError(response.message || 'Login failed')
       }

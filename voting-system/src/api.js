@@ -3,13 +3,68 @@ import axios from 'axios';
 // Base URL for your backend API
 const API_BASE_URL = 'http://localhost:4000/api';
 
+// Simple cache for API responses
+const cache = new Map();
+const CACHE_DURATION = 30 * 1000; // 30 seconds
+
+// Cache helper functions
+const getCacheKey = (url, params = {}) => {
+  return `${url}?${JSON.stringify(params)}`;
+};
+
+const getCachedResponse = (key) => {
+  const cached = cache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  cache.delete(key);
+  return null;
+};
+
+const setCachedResponse = (key, data) => {
+  cache.set(key, {
+    data,
+    timestamp: Date.now()
+  });
+};
+
 // Create axios instance with default config
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Enable cookies
 });
+
+// Add request interceptor to include auth token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('adminToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor to handle auth errors
+api.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    if (error.response?.status === 401) {
+      // Clear token and redirect to login
+      localStorage.removeItem('adminToken');
+      window.location.href = '/admin-login';
+    }
+    return Promise.reject(error);
+  }
+);
 
 // API functions for voter operations
 export const registerVoter = async (matricNumber, surname) => {
@@ -21,9 +76,13 @@ export const registerVoter = async (matricNumber, surname) => {
   }
 };
 
-export const castVote = async (matricNumber, code, candidate) => {
+export const castVote = async (matricNumber, code, candidate, position) => {
   try {
-    const response = await api.post('/vote', { matricNumber, code, candidate });
+    const response = await api.post('/vote', { matricNumber, code, candidate, position });
+    
+    // Clear cache after vote is cast to ensure fresh data
+    cache.clear();
+    
     return response.data;
   } catch (error) {
     throw error.response?.data || error;
@@ -32,7 +91,14 @@ export const castVote = async (matricNumber, code, candidate) => {
 
 export const getResults = async () => {
   try {
+    const cacheKey = getCacheKey('/results');
+    const cached = getCachedResponse(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const response = await api.get('/results');
+    setCachedResponse(cacheKey, response.data);
     return response.data;
   } catch (error) {
     throw error.response?.data || error;
@@ -41,16 +107,41 @@ export const getResults = async () => {
 
 export const getCurrentElectionInfo = async () => {
   try {
+    const cacheKey = getCacheKey('/election-info');
+    const cached = getCachedResponse(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const response = await api.get('/election-info');
+    setCachedResponse(cacheKey, response.data);
     return response.data;
   } catch (error) {
     throw error.response?.data || error;
   }
 };
 
-export const viewVote = async (matricNumber) => {
+export const viewVote = async (code) => {
   try {
-    const response = await api.post('/view-vote', { matricNumber });
+    const response = await api.post('/view-vote', { code });
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error;
+  }
+};
+
+export const verifyVotingCode = async (code, matricNumber) => {
+  try {
+    const response = await api.post('/verify-code', { code, matricNumber });
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error;
+  }
+};
+
+export const getMatricByCode = async (code) => {
+  try {
+    const response = await api.post('/get-matric-by-code', { code });
     return response.data;
   } catch (error) {
     throw error.response?.data || error;
@@ -61,6 +152,16 @@ export const viewVote = async (matricNumber) => {
 export const checkHealth = async () => {
   try {
     const response = await axios.get('http://localhost:4000/health');
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error;
+  }
+};
+
+// Blockchain status endpoint
+export const getBlockchainStatus = async () => {
+  try {
+    const response = await axios.get('http://localhost:4000/api/blockchain-status');
     return response.data;
   } catch (error) {
     throw error.response?.data || error;
@@ -200,6 +301,45 @@ export const getElectionStats = async () => {
 export const adminLogin = async (username, password) => {
   try {
     const response = await api.post('/admin/login', { username, password });
+    // Store token in localStorage
+    if (response.data.success && response.data.token) {
+      localStorage.setItem('adminToken', response.data.token);
+    }
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error;
+  }
+};
+
+export const adminLogout = async () => {
+  try {
+    const response = await api.post('/admin/logout');
+    // Clear token from localStorage
+    localStorage.removeItem('adminToken');
+    return response.data;
+  } catch (error) {
+    // Clear token even if logout fails
+    localStorage.removeItem('adminToken');
+    throw error.response?.data || error;
+  }
+};
+
+export const getCurrentAdmin = async () => {
+  try {
+    const response = await api.get('/admin/current');
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error;
+  }
+};
+
+export const refreshAdminSession = async () => {
+  try {
+    const response = await api.post('/admin/refresh-session');
+    // Update token in localStorage
+    if (response.data.success && response.data.token) {
+      localStorage.setItem('adminToken', response.data.token);
+    }
     return response.data;
   } catch (error) {
     throw error.response?.data || error;

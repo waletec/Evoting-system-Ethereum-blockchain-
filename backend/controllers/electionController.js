@@ -84,6 +84,23 @@ exports.startElection = async (req, res) => {
       });
     }
 
+    // Check blockchain connectivity before starting election
+    try {
+      const { connectToNetwork } = require('../blockchain/fabricUtils');
+      const network = await connectToNetwork();
+      const contract = network.getContract('votecc');
+      // Test blockchain connection with a simple query
+      await contract.evaluateTransaction('allVotes');
+      console.log('✅ Blockchain connectivity verified for election start');
+    } catch (blockchainError) {
+      console.error('❌ Blockchain connectivity check failed:', blockchainError.message);
+      return res.status(503).json({
+        success: false,
+        message: 'Cannot start election: Blockchain system is offline or unavailable. Please ensure the blockchain network is running before starting the election.',
+        error: 'blockchain_offline'
+      });
+    }
+
     // Check if we have voters and candidates
     const voterCount = await Voter.countDocuments({ isActive: true });
     const candidateCount = await Candidate.countDocuments({ isActive: true });
@@ -185,12 +202,12 @@ exports.resetSystem = async (req, res) => {
 
     // Clear blockchain data
     try {
-      const { connectToNetwork } = require('../fabric/connection');
+      const { connectToNetwork } = require('../blockchain/fabricUtils');
       const network = await connectToNetwork();
-      const contract = network.getContract('voting');
+      const contract = network.getContract('votecc');
       
       // Call blockchain reset function
-      await contract.submitTransaction('resetAllVotes');
+      await contract.submitTransaction('resetVotes', JSON.stringify([]));
       console.log('✅ Blockchain data cleared successfully');
     } catch (blockchainError) {
       console.error('⚠️ Blockchain reset error:', blockchainError.message);
