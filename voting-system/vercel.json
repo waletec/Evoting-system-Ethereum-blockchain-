@@ -5,19 +5,7 @@
         "dest": "/index.html"
       },
       {
-        "src": "/admin-dashboard", 
-        "dest": "/index.html"
-      },
-      {
-        "src": "/vote",
-        "dest": "/index.html"
-      },
-      {
-        "src": "/view-vote",
-        "dest": "/index.html"
-      },
-      {
-        "src": "/result",
+        "src": "/admin-dashboard",
         "dest": "/index.html"
       },
       {
@@ -26,3 +14,5 @@
       }
     ]
   }
+
+
