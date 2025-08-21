@@ -1,0 +1,38 @@
+{
+  "name": "ethereum",
+  "version": "1.0.0",
+  "main": "deploy.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.js --network remote",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "test": "hardhat test",
+    "node": "hardhat node",
+    "clean": "hardhat clean",
+    "verify": "hardhat verify",
+    "console": "hardhat console",
+    "console:remote": "hardhat console --network remote",
+    "test:remote": "hardhat test --network remote",
+    "test-connection": "hardhat run scripts/test-connection.js --network remote",
+    "test-basic": "hardhat run scripts/test-basic-connection.js --network remote-readonly",
+    "simple-test": "hardhat run scripts/simple-test.js --network remote-readonly",
+    "geth-status": "hardhat run scripts/test-geth-status.js --network remote-readonly",
+    "test-compile": "hardhat run scripts/test-contract-compile.js --network remote-readonly",
+    "check-network": "hardhat run scripts/check-network-config.js --network remote-readonly",
+    "test-zero-eth": "hardhat run scripts/test-zero-eth-transaction.js --network remote-readonly",
+    "test-deploy": "hardhat run scripts/test-deploy-without-eth.js --network remote-readonly",
+    "simple-deploy-test": "hardhat run scripts/simple-deploy-test.js --network remote-readonly"
+  },
+  "keywords": ["ethereum", "voting", "smart-contracts", "hardhat"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "ethers": "^6.15.0",
+    "hardhat": "^2.26.3"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.0"
+  },
+  "description": "Ethereum smart contracts for e-voting system"
+}

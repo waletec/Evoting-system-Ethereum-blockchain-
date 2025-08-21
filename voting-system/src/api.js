@@ -94,14 +94,8 @@ export const castVote = async (matricNumber, code, candidate, position) => {
 
 export const getResults = async () => {
   try {
-    const cacheKey = getCacheKey('/results');
-    const cached = getCachedResponse(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
+    // Disable caching for real-time results to ensure fresh data
     const response = await api.get('/results');
-    setCachedResponse(cacheKey, response.data);
     return response.data;
   } catch (error) {
     throw error.response?.data || error;
@@ -285,6 +279,15 @@ export const endElection = async () => {
 export const resetSystem = async () => {
   try {
     const response = await api.post('/election/reset');
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error;
+  }
+};
+
+export const resetBlockchain = async () => {
+  try {
+    const response = await api.post('/blockchain-reset');
     return response.data;
   } catch (error) {
     throw error.response?.data || error;

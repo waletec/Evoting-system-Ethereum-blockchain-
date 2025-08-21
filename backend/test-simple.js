@@ -48,28 +48,6 @@ async function testSimpleConnection() {
         
         console.log('🔍 Loading wallet...');
         const walletPath = path.join(process.cwd(), 'wallet');
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-        
-        console.log('🔍 Creating gateway...');
-        const gateway = new Gateway();
-        await gateway.connect(minimalCCP, {
-            wallet,
-            identity: 'appUser',
-            discovery: { enabled: false, asLocalhost: false }
-        });
-        
-        console.log('🔍 Getting network...');
-        const network = await gateway.getNetwork('mychannel');
-        
-        console.log('🔍 Getting contract...');
-        const contract = network.getContract('votecc');
-        
-        console.log('🔍 Testing simple query...');
-        const result = await contract.evaluateTransaction('allVotes');
-        
-        console.log('✅ SUCCESS:', result.toString());
-        
-        await gateway.disconnect();
         
     } catch (error) {
         console.error('❌ ERROR:', error.message);
@@ -77,4 +55,6 @@ async function testSimpleConnection() {
     }
 }
 
+    // Fabric-related code removed for Ethereum migration
+    // ...existing code...
 testSimpleConnection();

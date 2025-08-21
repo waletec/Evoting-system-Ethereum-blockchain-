@@ -1,10 +1,9 @@
 // controllers/voteController.js
-
-const { connectToNetwork } = require('../blockchain/fabricUtils');
-const Vote = require('../models/Vote'); // (MongoDB model)
-const User = require('../models/User'); // (MongoDB model)
-const Voter = require('../models/Voter'); // (MongoDB model for voter verification)
-const Election = require('../models/Election'); // (MongoDB model for election data)
+const Vote = require('../models/Vote');
+const User = require('../models/User');
+const Voter = require('../models/Voter');
+const Election = require('../models/Election');
+const contractUtils = require('../ethereum/contractUtils');
 
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
@@ -136,32 +135,21 @@ exports.castVote = async (req, res) => {
       return res.status(403).json({ error: `You have already voted for ${position}` });
     }
 
-    // Connect to Fabric and submit vote with timeout
-    let blockchainSuccess = false;
+    // Submit vote to mock blockchain
     try {
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Blockchain connection timeout')), 5000)
-      );
-      
-      const fabricPromise = (async () => {
-        const network = await connectToNetwork();
-        const contract = network.getContract('votecc');
-        await contract.submitTransaction('castVote', matricNumber, candidate);
-        logger.info('✅ Vote submitted to blockchain');
-        blockchainSuccess = true;
-      })();
+        const blockchainSuccess = await contractUtils.castVote(matricNumber, candidate);
+        logger.info('✅ Vote submitted to mock blockchain');
 
-      await Promise.race([fabricPromise, timeoutPromise]);
-    } catch (fabricError) {
-      logger.error('❌ Fabric connection error:', fabricError.message);
-      throw new Error(`Blockchain recording failed: ${fabricError.message}. Please ensure the blockchain network is running and try again.`);
-    }
-
-    // Only save to MongoDB if blockchain recording was successful
-    if (blockchainSuccess) {
-      const vote = new Vote({ matricNumber, candidate, position });
-      await vote.save();
-      logger.info('✅ Vote saved to MongoDB');
+        if (blockchainSuccess) {
+            const vote = new Vote({ matricNumber, candidate, position });
+            await vote.save();
+            logger.info('✅ Vote saved to MongoDB');
+        } else {
+            return res.status(500).json({ error: 'Failed to record vote in blockchain' });
+        }
+    } catch (blockchainError) {
+        logger.error('Error submitting vote to blockchain:', blockchainError);
+        return res.status(500).json({ error: 'Failed to submit vote to blockchain' });
     }
 
     // Check if user has voted for all positions (optional - for tracking completion)
@@ -382,28 +370,24 @@ exports.viewMyVote = async (req, res) => {
     }
 
     try {
-      const network = await connectToNetwork();
-      const contract = network.getContract('votecc');
-
-      const result = await contract.submitTransaction('queryVote', foundUser.matricNumber);
-      const parsedResult = JSON.parse(result.toString());
-
-      return res.status(200).json(parsedResult);
-    } catch (fabricError) {
-      logger.error('⚠️ Fabric connection error:', fabricError.message);
-      // Fallback to MongoDB
-      const votes = await Vote.find({ matricNumber: foundUser.matricNumber });
-      if (!votes || votes.length === 0) {
-        return res.status(404).json({ error: 'No votes found for this voter' });
-      }
-      return res.status(200).json({ 
-        votes: votes, 
-        totalVotes: votes.length,
-        voterInfo: {
-          matricNumber: foundUser.matricNumber,
-          surname: foundUser.surname
-        }
-      });
+        // Get vote from blockchain
+        const blockchainVote = await contractUtils.getVote(foundUser.matricNumber);
+        
+        // Get additional details from MongoDB
+        const votes = await Vote.find({ matricNumber: foundUser.matricNumber });
+        
+        return res.status(200).json({
+            votes: votes,
+            blockchainVote,
+            totalVotes: votes.length,
+            voterInfo: {
+                matricNumber: foundUser.matricNumber,
+                surname: foundUser.surname
+            }
+        });
+    } catch (error) {
+        logger.error('Error getting vote:', error);
+        throw error;
     }
   } catch (error) {
     logger.error('Error viewing vote:', error);
@@ -500,18 +484,11 @@ exports.verifyVotingCode = async (req, res) => {
       });
     }
 
-    // Check if user has already voted
-    if (user.hasVoted) {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'You have already voted' 
-      });
-    }
-
-    return res.status(200).json({
+    // Return success response
+    res.json({
       success: true,
       message: 'Voting code verified successfully',
-      voterInfo: {
+      voter: {
         matricNumber: user.matricNumber,
         surname: user.surname
       }

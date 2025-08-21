@@ -1,6 +1,5 @@
 
 const path = require('path');
-const { Gateway, Wallets } = require('fabric-network');
 const fs = require('fs');
 
 const ccpPath = process.env.FABRIC_CCP
@@ -25,27 +24,10 @@ async function connectToNetwork() {
     }
 
     console.log('🔄 Creating new blockchain connection...');
-    const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
-    const wallet = await Wallets.newFileSystemWallet(walletPath);
 
-    const identity = await wallet.get('admin');
-    if (!identity) {
-      throw new Error('Admin identity not found in wallet');
-    }
 
-    const gateway = new Gateway();
-    const identityLabel = process.env.FABRIC_IDENTITY || 'admin';
-    const discoveryEnabled = (process.env.FABRIC_DISCOVERY_ENABLED || 'true').toLowerCase() === 'true';
-    const asLocalhost = (process.env.FABRIC_AS_LOCALHOST || 'false').toLowerCase() === 'true';
 
-    await gateway.connect(ccp, {
-      wallet,
-      identity: identityLabel,
-      discovery: { enabled: discoveryEnabled, asLocalhost }
-    });
 
-    const channelName = process.env.FABRIC_CHANNEL || 'mychannel';
-    const network = await gateway.getNetwork(channelName);
     
     // Cache the connection
     cachedNetwork = network;

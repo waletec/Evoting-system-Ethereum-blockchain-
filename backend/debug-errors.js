@@ -1,4 +1,4 @@
-const { Gateway, Wallets } = require('fabric-network');
+// Fabric-related code removed for Ethereum migration
 const path = require('path');
 const fs = require('fs');
 

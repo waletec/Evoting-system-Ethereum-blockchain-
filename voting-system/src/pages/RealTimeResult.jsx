@@ -162,11 +162,23 @@ const RealTimeResults = () => {
   }
 
   const getChartData = (position) => {
-    return position.candidates.map((candidate) => ({
+    const colors = [
+      'rgba(255, 206, 86, 0.8)',   // Yellow
+      'rgba(201, 203, 207, 0.8)',  // Gray
+      'rgba(255, 159, 64, 0.8)',   // Orange
+      'rgba(54, 162, 235, 0.8)',   // Blue
+      'rgba(255, 99, 132, 0.8)',   // Red
+      'rgba(75, 192, 192, 0.8)',   // Teal
+      'rgba(153, 102, 255, 0.8)',  // Purple
+      'rgba(255, 205, 86, 0.8)',   // Light Yellow
+    ];
+    
+    return position.candidates.map((candidate, index) => ({
       name: candidate.fullName,
       votes: candidate.votes,
       percentage: candidate.percentage,
-      fill: COLORS[candidate.id % COLORS.length],
+      fill: colors[index % colors.length],
+      stroke: colors[index % colors.length].replace('0.8', '1'),
     }))
   }
 
@@ -354,7 +366,7 @@ const RealTimeResults = () => {
                         <XAxis dataKey="name" />
                         <YAxis />
                       <Tooltip />
-                      <Bar dataKey="votes" fill="#3B82F6" />
+                      <Bar dataKey="votes" fill={(entry) => entry.fill} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -375,7 +387,7 @@ const RealTimeResults = () => {
                           dataKey="votes"
                         >
                         {getChartData(position).map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                          <Cell key={`cell-${index}`} fill={entry.fill} stroke={entry.stroke} strokeWidth={2} />
                           ))}
                         </Pie>
                       <Tooltip />

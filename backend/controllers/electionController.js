@@ -86,8 +86,10 @@ exports.startElection = async (req, res) => {
     }
 
     // Check blockchain connectivity before starting election
+    // TODO: Re-enable blockchain check when real blockchain is integrated
+    /*
     try {
-      const { connectToNetwork } = require('../blockchain/fabricUtils');
+// Fabric-related code removed for Ethereum migration
       const network = await connectToNetwork();
       const contract = network.getContract('votecc');
       // Test blockchain connection with a simple query
@@ -101,6 +103,8 @@ exports.startElection = async (req, res) => {
         error: 'blockchain_offline'
       });
     }
+    */
+    logger.info('✅ Blockchain check bypassed - using mock data for now');
 
     // Check if we have voters and candidates
     const voterCount = await Voter.countDocuments({ isActive: true });
@@ -181,7 +185,7 @@ exports.endElection = async (req, res) => {
   }
 };
 
-// Reset system (delete all data)
+// Reset system (delete all data from database only)
 exports.resetSystem = async (req, res) => {
   try {
     // Delete all elections
@@ -201,23 +205,9 @@ exports.resetSystem = async (req, res) => {
     const Vote = require('../models/Vote');
     await Vote.deleteMany({});
 
-    // Clear blockchain data
-    try {
-      const { connectToNetwork } = require('../blockchain/fabricUtils');
-      const network = await connectToNetwork();
-      const contract = network.getContract('votecc');
-      
-      // Call blockchain reset function
-      await contract.submitTransaction('resetVotes', JSON.stringify([]));
-      logger.info('✅ Blockchain data cleared successfully');
-    } catch (blockchainError) {
-      logger.error('⚠️ Blockchain reset error:', blockchainError.message);
-      // Continue even if blockchain reset fails
-    }
-
     res.json({
       success: true,
-      message: 'System reset successfully (Database and Blockchain cleared)'
+      message: 'Database reset successfully'
     });
 
   } catch (error) {

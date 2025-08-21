@@ -69,12 +69,14 @@ import {
   createOrUpdateElection,
   startElection,
   resetSystem as resetSystemAPI,
+  resetBlockchain,
   getElectionStats,
   getCurrentAdmin,
   adminLogout,
   refreshAdminSession,
   checkHealth,
-  getBlockchainStatus
+  getBlockchainStatus,
+  getResults
 } from '../api';
 import BlockchainStatus from '../components/BlockchainStatus';
 
@@ -89,6 +91,7 @@ const AdminDashboard = () => {
   const [electionStarted, setElectionStarted] = useState(false);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [resultsLoading, setResultsLoading] = useState(false);
   const [realTimeStats, setRealTimeStats] = useState({
     totalVotesCast: 0,
     voterTurnout: 0,
@@ -145,6 +148,7 @@ const AdminDashboard = () => {
   const [showCandidatesModal, setShowCandidatesModal] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showBlockchainResetModal, setShowBlockchainResetModal] = useState(false);
   const [showAddCandidateModal, setShowAddCandidateModal] = useState(false);
   const [showAddVoterModal, setShowAddVoterModal] = useState(false);
 
@@ -211,8 +215,8 @@ const AdminDashboard = () => {
     if (electionStarted) {
       // Fetch results immediately
       fetchRealTimeResults();
-      // Then poll every 30 seconds
-      interval = setInterval(fetchRealTimeResults, 30000);
+      // Then poll every 10 seconds for more frequent updates
+      interval = setInterval(fetchRealTimeResults, 10000);
     }
     return () => {
       if (interval) clearInterval(interval);
@@ -537,55 +541,125 @@ const AdminDashboard = () => {
   const fetchRealTimeResults = async () => {
     if (!electionStarted) return;
     
+    console.log('🔍 Debug: electionStarted:', electionStarted);
+    console.log('🔍 Debug: candidates array:', candidates);
+    console.log('🔍 Debug: voters array:', voters);
+    
+    // Don't fetch if no candidates or voters
+    if (!candidates || candidates.length === 0) {
+      console.log('⚠️ No candidates available for results');
+      return;
+    }
+    
+    if (!voters || voters.length === 0) {
+      console.log('⚠️ No voters available for results');
+      return;
+    }
+    
+    setResultsLoading(true);
+    
     try {
-      // Fetch real-time results from blockchain/database
+      // Fetch real-time results from backend
       const response = await getResults();
-      if (response && Array.isArray(response)) {
-        // Process real results
-        const processedResults = candidates.map(candidate => {
-          const candidateVotes = response.filter(vote => vote.candidate === candidate._id).length;
-          return {
-            candidateId: candidate._id,
+      console.log('📊 Real-time results response:', response);
+      console.log('📊 Response success:', response.success);
+      console.log('📊 Response results:', response.results);
+      console.log('📊 Response totalVotes:', response.totalVotes);
+      console.log('📊 Response voterTurnout:', response.voterTurnout);
+      
+      if (response && response.success && response.results) {
+        console.log('✅ Processing valid results data');
+        // Process real results from backend
+        const allCandidates = [];
+        
+        // Flatten results from all positions into a single array
+        response.results.forEach(positionResult => {
+          console.log('📊 Processing position:', positionResult.positionTitle);
+          positionResult.candidates.forEach(candidate => {
+            console.log('📊 Processing candidate:', candidate.fullName, 'votes:', candidate.votes);
+            allCandidates.push({
+              candidateId: candidate.id,
         candidateName: candidate.fullName,
-            position: candidate.position,
+              position: positionResult.positionTitle,
             department: candidate.department,
-            votes: candidateVotes,
-            percentage: 0
-          };
+              votes: candidate.votes || 0,
+              percentage: parseFloat(candidate.percentage) || 0
+        });
+          });
         });
 
-        const totalVotes = processedResults.reduce((sum, result) => sum + result.votes, 0);
-        processedResults.forEach((result) => {
-          result.percentage = totalVotes > 0 ? (result.votes / totalVotes) * 100 : 0;
-        });
-
-        const sortedResults = processedResults.sort((a, b) => b.votes - a.votes);
+        console.log('📊 All candidates processed:', allCandidates);
+        const sortedResults = allCandidates.sort((a, b) => b.votes - a.votes);
         setResults(sortedResults);
 
-        // Calculate statistics
-        calculateStatistics(sortedResults, totalVotes);
+        // Calculate statistics using backend data
+        const totalVotes = response.totalVotes || 0;
+        const voterTurnout = response.voterTurnout || 0;
+        
+        setRealTimeStats({
+          totalVotesCast: totalVotes,
+          voterTurnout: voterTurnout,
+          leadingCandidate: sortedResults.length > 0 ? sortedResults[0] : null,
+          marginOfVictory: sortedResults.length > 1 ? sortedResults[0].votes - sortedResults[1].votes : 0,
+          participationRate: voterTurnout,
+          lastUpdated: new Date()
+        });
+        
+        console.log('✅ Real-time results updated successfully with actual data');
     } else {
-        // Fallback to simulated data for demo
-        const simulatedResults = candidates.map((candidate, index) => ({
+        console.log('⚠️ No valid results data, showing zero votes');
+        console.log('⚠️ Response exists:', !!response);
+        console.log('⚠️ Response success:', response?.success);
+        console.log('⚠️ Response results exists:', !!response?.results);
+        // Show actual candidates with zero votes instead of random data
+        const zeroVoteResults = candidates.map((candidate) => ({
           candidateId: candidate._id,
           candidateName: candidate.fullName,
           position: candidate.position,
           department: candidate.department,
-          votes: Math.floor(Math.random() * (voters.length * 0.8)) + Math.floor(voters.length * 0.1),
+          votes: 0,
           percentage: 0
         }));
 
-        const totalVotes = simulatedResults.reduce((sum, result) => sum + result.votes, 0);
-        simulatedResults.forEach((result) => {
-          result.percentage = totalVotes > 0 ? (result.votes / totalVotes) * 100 : 0;
+        setResults(zeroVoteResults);
+        
+        setRealTimeStats({
+          totalVotesCast: 0,
+          voterTurnout: 0,
+          leadingCandidate: null,
+          marginOfVictory: 0,
+          participationRate: 0,
+          lastUpdated: new Date()
         });
-
-        const sortedResults = simulatedResults.sort((a, b) => b.votes - a.votes);
-        setResults(sortedResults);
-        calculateStatistics(sortedResults, totalVotes);
+        
+        console.log('✅ Showing zero votes for all candidates');
       }
     } catch (error) {
-      console.error('Error fetching real-time results:', error);
+      console.error('❌ Error fetching real-time results:', error);
+      // Show actual candidates with zero votes on error instead of random data
+      const zeroVoteResults = candidates.map((candidate) => ({
+        candidateId: candidate._id,
+        candidateName: candidate.fullName,
+        position: candidate.position,
+        department: candidate.department,
+        votes: 0,
+        percentage: 0
+      }));
+
+      setResults(zeroVoteResults);
+      
+      setRealTimeStats({
+        totalVotesCast: 0,
+        voterTurnout: 0,
+        leadingCandidate: null,
+        marginOfVictory: 0,
+        participationRate: 0,
+        lastUpdated: new Date()
+      });
+      
+      console.log('✅ Showing zero votes due to error');
+    } finally {
+      setResultsLoading(false);
     }
   };
 
@@ -651,19 +725,35 @@ const AdminDashboard = () => {
     try {
       const response = await resetSystemAPI();
       if (response.success) {
-    setElectionTitle("");
-    setVoters([]);
-    setCandidates([]);
-    setResults([]);
-    setElectionStarted(false);
-    setShowResetModal(false);
-    showToast("System reset successfully!", "success");
+        setElectionTitle("");
+        setVoters([]);
+        setCandidates([]);
+        setResults([]);
+        setElectionStarted(false);
+        setShowResetModal(false);
+        showToast("Database reset successfully!", "success");
       } else {
-        showToast(response.message || "Failed to reset system", "error");
+        showToast(response.message || "Failed to reset database", "error");
       }
     } catch (error) {
-      console.error('Error resetting system:', error);
-      showToast('Error resetting system', 'error');
+      console.error('Error resetting database:', error);
+      showToast('Error resetting database', 'error');
+    }
+  };
+
+  const handleResetBlockchain = async () => {
+    try {
+      const response = await resetBlockchain();
+      if (response.success) {
+        setShowBlockchainResetModal(false);
+        setResults([]);
+        showToast("Blockchain data reset successfully!", "success");
+      } else {
+        showToast(response.message || "Failed to reset blockchain", "error");
+      }
+    } catch (error) {
+      console.error('Error resetting blockchain:', error);
+      showToast('Error resetting blockchain', 'error');
     }
   };
 
@@ -1203,11 +1293,11 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* Tips Banner */}
-        <div className="mb-8 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+        {/* Tips Banner and Status Overview */}
+        <div className="mb-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Voting Guidelines & Tips */}
+          <div className="lg:col-span-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
           <div className="p-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
-              <div>
                 <h3 className="text-xl font-semibold text-blue-900 mb-4">Voting Guidelines & Tips</h3>
                 <ul className="space-y-2 text-blue-800">
                   <li className="flex items-start">
@@ -1228,24 +1318,44 @@ const AdminDashboard = () => {
                   </li>
                 </ul>
               </div>
-              <div className="flex justify-center">
-                <div className="relative">
-                  <img
-                    src="https://via.placeholder.com/250x200/3B82F6/FFFFFF?text=Voting+Illustration"
-                    alt="Person voting at ballot box"
-                    className="rounded-lg shadow-md"
-                  />
-                  <div className="absolute -top-2 -right-2 bg-blue-600 text-white rounded-full p-2">
-                    <Vote className="h-5 w-5" />
                   </div>
+
+          {/* Status Overview */}
+          <div className="space-y-4">
+            <div className="bg-white rounded-lg shadow p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Election Status</p>
+                  <p className="text-xl font-bold">{electionStarted ? "Active" : "Inactive"}</p>
                 </div>
+                <div className={`w-3 h-3 rounded-full ${electionStarted ? "bg-green-500" : "bg-red-500"}`}></div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Total Voters</p>
+                  <p className="text-xl font-bold">{voters.length}</p>
+                </div>
+                <Users className="h-6 w-6 text-blue-600" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Candidates</p>
+                  <p className="text-xl font-bold">{candidates.length}</p>
+                </div>
+                <UserPlus className="h-6 w-6 text-orange-600" />
               </div>
             </div>
           </div>
         </div>
 
         {/* Management Buttons */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
           {/* System Status Card */}
           <div className="bg-white border-2 rounded-lg">
             <div className="p-6 text-center">
@@ -1416,7 +1526,7 @@ const AdminDashboard = () => {
             <p className="text-sm text-gray-500">Manage the election process and view results</p>
           </div>
           <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
               {/* Start Election */}
               <button
                 onClick={handleStartElection}
@@ -1447,53 +1557,59 @@ const AdminDashboard = () => {
                 <span>Export Results</span>
               </button>
 
-              {/* Reset System */}
+              {/* Reset Election */}
               <button
                 onClick={() => setShowResetModal(true)}
                 className="h-20 flex flex-col items-center justify-center space-y-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
               >
                 <RotateCcw className="h-8 w-8" />
-                <span>Reset System</span>
+                <span>Reset Election</span>
+              </button>
+
+              {/* Reset Blockchain */}
+              <button
+                onClick={() => setShowBlockchainResetModal(true)}
+                className="h-20 flex flex-col items-center justify-center space-y-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors"
+              >
+                <RotateCcw className="h-8 w-8" />
+                <span>Reset Blockchain</span>
               </button>
             </div>
           </div>
         </div>
 
-        {/* Status Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Election Status</p>
-                <p className="text-2xl font-bold">{electionStarted ? "Active" : "Inactive"}</p>
-              </div>
-              <div className={`w-3 h-3 rounded-full ${electionStarted ? "bg-green-500" : "bg-red-500"}`}></div>
-            </div>
-          </div>
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Voters</p>
-                <p className="text-2xl font-bold">{voters.length}</p>
-              </div>
-              <Users className="h-8 w-8 text-blue-600" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Candidates</p>
-                <p className="text-2xl font-bold">{candidates.length}</p>
-              </div>
-              <UserPlus className="h-8 w-8 text-orange-600" />
-            </div>
-          </div>
-        </div>
       </main>
 
       {/* Modals */}
+      {showBlockchainResetModal && (
+        <Modal onClose={() => setShowBlockchainResetModal(false)}>
+          <div className="p-6">
+            <div className="mb-4">
+              <h3 className="text-lg font-medium text-red-900">Reset Blockchain Data</h3>
+              <p className="mt-2 text-sm text-gray-600">
+                This will clear all votes from the blockchain. This action cannot be undone. 
+                The election database will not be affected.
+              </p>
+            </div>
+            <div className="mt-5 flex justify-end space-x-3">
+              <button
+                onClick={() => setShowBlockchainResetModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetBlockchain}
+                className="px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700"
+              >
+                Reset Blockchain
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      
       {showTitleModal && (
         <Modal onClose={() => setShowTitleModal(false)}>
           <div className="p-6">
@@ -2007,13 +2123,24 @@ const AdminDashboard = () => {
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-medium text-gray-900">View Voters</h3>
               <div className="flex items-center space-x-4">
+                <div className="flex flex-col">
                 <button
                   onClick={() => setShowAddVoterModal(true)}
-                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    disabled={!currentAdmin || currentAdmin.role !== 'super_admin'}
+                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                      currentAdmin && currentAdmin.role === 'super_admin'
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                    }`}
+                    title={currentAdmin && currentAdmin.role === 'super_admin' ? 'Add new voter' : 'Only Super Admins can add voters'}
                 >
                   <Plus className="h-4 w-4" />
                   <span>Add Voter</span>
                 </button>
+                  {currentAdmin && currentAdmin.role !== 'super_admin' && (
+                    <span className="text-xs text-gray-500 mt-1">Super Admin only</span>
+                  )}
+                </div>
                 <button
                   onClick={() => setShowViewVotersModal(false)}
                   className="text-gray-500 hover:text-gray-700"
@@ -2459,6 +2586,19 @@ const AdminDashboard = () => {
                 </p>
               </div>
               <div className="flex items-center space-x-4">
+                <button
+                  onClick={fetchRealTimeResults}
+                  disabled={resultsLoading}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                    resultsLoading 
+                      ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                  title="Refresh results"
+                >
+                  <Loader2 className={`h-4 w-4 ${resultsLoading ? 'animate-spin' : ''}`} />
+                  <span>{resultsLoading ? 'Refreshing...' : 'Refresh'}</span>
+                </button>
                 <button
                   onClick={handleExportResults}
                   className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"

@@ -85,8 +85,8 @@ const ViewVotePage = () => {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid lg:grid-cols-2 gap-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="grid lg:grid-cols-3 gap-8">
           {/* Left Column - Form */}
           <div className="space-y-6">
             {/* Search Form */}
@@ -101,31 +101,6 @@ const ViewVotePage = () => {
                 </div>
               </div>
 
-              {/* Blockchain Status Warning */}
-              {blockchainStatus === 'disconnected' && (
-                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex items-start space-x-3">
-                    <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
-                    <div>
-                      <h4 className="text-sm font-medium text-red-900 mb-1">Blockchain Connection Required</h4>
-                      <p className="text-sm text-red-700">
-                        Vote verification requires blockchain connection. Some vote data may not be available.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Error Message */}
-              {error && (
-                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex items-center space-x-2">
-                    <AlertTriangle className="h-5 w-5 text-red-600" />
-                    <span className="text-red-800">{error}</span>
-                  </div>
-                </div>
-              )}
-
               <form onSubmit={handleViewVote} className="space-y-4">
                 <div>
                   <label htmlFor="votingCode" className="block text-sm font-medium text-gray-700 mb-2">
@@ -136,27 +111,36 @@ const ViewVotePage = () => {
                     id="votingCode"
                     value={votingCode}
                     onChange={(e) => setVotingCode(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter your voting code"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                     required
                   />
                 </div>
 
+                {error && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <AlertTriangle className="h-4 w-4 text-red-600" />
+                      <span className="text-sm text-red-800">{error}</span>
+                    </div>
+                  </div>
+                )}
+
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
                 >
                   {loading ? (
-                    <div className="flex items-center justify-center space-x-2">
+                    <>
                       <Loader2 className="h-5 w-5 animate-spin" />
                       <span>Searching...</span>
-                    </div>
+                    </>
                   ) : (
-                    <div className="flex items-center justify-center space-x-2">
+                    <>
                       <Eye className="h-5 w-5" />
                       <span>View Vote</span>
-                    </div>
+                    </>
                   )}
                 </button>
               </form>
@@ -165,42 +149,60 @@ const ViewVotePage = () => {
             {/* Information */}
             <div className="bg-white rounded-xl shadow-sm border p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">How it works</h3>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="flex items-start space-x-3">
-                  <div className="flex-shrink-0 w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-xs font-bold text-blue-600">1</span>
+                  <div className="bg-blue-100 p-2 rounded-lg">
+                    <Eye className="h-5 w-5 text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Enter your voting code</p>
-                    <p className="text-sm text-gray-600">Use the voting code you received during registration</p>
+                    <h4 className="text-sm font-medium text-gray-900">Verify Your Vote</h4>
+                    <p className="text-sm text-gray-600">Paste the voting code you received during registration to view your voting record</p>
                   </div>
                 </div>
+                
                 <div className="flex items-start space-x-3">
-                  <div className="flex-shrink-0 w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-xs font-bold text-blue-600">2</span>
+                  <div className="bg-green-100 p-2 rounded-lg">
+                    <CheckCircle className="h-5 w-5 text-green-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Verify your vote</p>
-                    <p className="text-sm text-gray-600">View the candidate you voted for and when you voted</p>
+                    <h4 className="text-sm font-medium text-gray-900">Check Vote Integrity</h4>
+                    <p className="text-sm text-gray-600">Ensure your voting information and choices were not altered after submission</p>
                   </div>
                 </div>
+                
                 <div className="flex items-start space-x-3">
-                  <div className="flex-shrink-0 w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-xs font-bold text-blue-600">3</span>
+                  <div className="bg-purple-100 p-2 rounded-lg">
+                    <Shield className="h-5 w-5 text-purple-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Secure verification</p>
-                    <p className="text-sm text-gray-600">Your vote is verified against the blockchain record</p>
+                    <h4 className="text-sm font-medium text-gray-900">Blockchain Verification</h4>
+                    <p className="text-sm text-gray-600">Your vote is verified against the immutable blockchain record for complete transparency</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Privacy & Security moved here */}
+              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start space-x-3">
+                  <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-medium text-blue-900 mb-1">Privacy & Security</h4>
+                    <div className="space-y-1 text-xs text-blue-700">
+                      <p>• Your vote is anonymous and cannot be traced back to you</p>
+                      <p>• Only you can view your own voting record</p>
+                      <p>• All votes are encrypted and stored on the blockchain</p>
+                      <p>• The system ensures complete vote integrity</p>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Right Column - Results */}
-          <div className="space-y-6">
+          {/* Right Column - Results (Wider) */}
+          <div className="lg:col-span-2 space-y-6">
             {voteData ? (
-              /* Vote Details */
+              /* Vote Details - Wider Layout */
               <div className="bg-white rounded-xl shadow-sm border p-6">
                 <div className="flex items-center space-x-3 mb-6">
                   <div className="bg-green-100 p-2 rounded-lg">
@@ -212,7 +214,7 @@ const ViewVotePage = () => {
                   </div>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                     <div className="flex items-center space-x-2 mb-2">
                       <Vote className="h-5 w-5 text-green-600" />
@@ -223,45 +225,52 @@ const ViewVotePage = () => {
                     </p>
                   </div>
 
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm font-medium text-gray-700">Matric Number:</span>
-                      <span className="text-sm text-gray-900">{voteData.votes?.[0]?.matricNumber || voteData.matricNumber}</span>
+                  {/* Similar data arranged side by side */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                      <div className="text-center">
+                        <span className="text-sm font-medium text-gray-700 block mb-1">Matric Number</span>
+                        <span className="text-lg font-bold text-gray-900">{voteData.votes?.[0]?.matricNumber || voteData.matricNumber}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm font-medium text-gray-700">Total Votes Cast:</span>
-                      <span className="text-sm text-gray-900 font-semibold">{voteData.totalVotes || 1}</span>
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                      <div className="text-center">
+                        <span className="text-sm font-medium text-gray-700 block mb-1">Total Votes Cast</span>
+                        <span className="text-lg font-bold text-gray-900">{voteData.totalVotes || 1}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm font-medium text-gray-700">Vote Time:</span>
-                      <span className="text-sm text-gray-900">
-                        {voteData.votes?.[0]?.timestamp ? new Date(voteData.votes[0].timestamp).toLocaleString() : 
-                         voteData.timestamp ? new Date(voteData.timestamp).toLocaleString() : 'Not available'}
-                      </span>
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                      <div className="text-center">
+                        <span className="text-sm font-medium text-gray-700 block mb-1">Vote Time</span>
+                        <span className="text-sm font-bold text-gray-900">
+                          {voteData.votes?.[0]?.timestamp ? new Date(voteData.votes[0].timestamp).toLocaleString() : 
+                           voteData.timestamp ? new Date(voteData.timestamp).toLocaleString() : 'Not available'}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Display votes by position */}
+                  {/* Vote records in block format */}
                   {voteData.votes && voteData.votes.length > 0 && (
-                    <div className="mt-4">
-                      <h4 className="text-sm font-medium text-gray-700 mb-3">Your Votes by Position:</h4>
-                      <div className="space-y-2">
+                    <div>
+                      <h4 className="text-lg font-medium text-gray-900 mb-4">Your Votes by Position</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {voteData.votes.map((vote, index) => (
-                          <div key={index} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                            <div>
+                          <div key={index} className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
                               <span className="text-sm font-medium text-blue-900">{vote.position}</span>
-                              <p className="text-sm text-blue-700">{vote.candidate}</p>
+                              <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
+                                {vote.timestamp ? new Date(vote.timestamp).toLocaleDateString() : 'N/A'}
+                              </span>
                             </div>
-                            <span className="text-xs text-blue-600">
-                              {vote.timestamp ? new Date(vote.timestamp).toLocaleDateString() : 'N/A'}
-                            </span>
+                            <p className="text-lg font-semibold text-blue-800">{vote.candidate}</p>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
 
-                  <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                     <div className="flex items-start space-x-2">
                       <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
                       <div>
@@ -289,22 +298,6 @@ const ViewVotePage = () => {
                 </div>
               </div>
             )}
-
-            {/* Security Notice */}
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <div className="flex items-start space-x-3">
-                <Shield className="h-6 w-6 text-green-600 mt-0.5" />
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Privacy & Security</h3>
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <p>• Your vote is anonymous and cannot be traced back to you</p>
-                    <p>• Only you can view your own voting record</p>
-                    <p>• All votes are encrypted and stored on the blockchain</p>
-                    <p>• The system ensures complete vote integrity</p>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>

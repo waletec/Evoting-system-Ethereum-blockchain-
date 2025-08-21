@@ -579,45 +579,7 @@ const LandingPage = () => {
                   </div>
                 )}
 
-                {/* Code Verification */}
-                <div className="bg-white rounded-xl shadow-sm border p-6">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <div className="bg-purple-100 p-2 rounded-lg">
-                      <Lock className="h-6 w-6 text-purple-600" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Already Have a Code?</h3>
-                      <p className="text-gray-600">Enter your code to proceed to voting</p>
-                    </div>
-                  </div>
 
-                  <div className="space-y-3">
-                    <input
-                      type="text"
-                      value={verificationCode}
-                      onChange={(e) => setVerificationCode(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      placeholder="Enter your voting code"
-                    />
-                    <button
-                      onClick={handleVerifyCode}
-                      disabled={verifying}
-                      className="w-full bg-purple-600 text-white py-3 px-4 rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {verifying ? (
-                        <div className="flex items-center justify-center space-x-2">
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                          <span>Verifying...</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-center space-x-2">
-                          <CheckCircle className="h-5 w-5" />
-                          <span>Verify & Vote</span>
-                        </div>
-                      )}
-                    </button>
-                  </div>
-                </div>
               </>
             ) : (
               /* No Election - Disabled Form */
@@ -640,6 +602,87 @@ const LandingPage = () => {
             )}
           </div>
         </div>
+
+        {/* Voting Procedures - Full Width */}
+        {election && election.status === 'active' && (
+          <div className="mt-8">
+            <div className="bg-white rounded-xl shadow-sm border p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="bg-green-100 p-2 rounded-lg">
+                  <CheckCircle className="h-6 w-6 text-green-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Voting Procedures</h3>
+                  <p className="text-gray-600">Follow these steps to cast your vote</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="flex items-start space-x-3">
+                  <div className="bg-blue-100 p-2 rounded-full w-8 h-8 flex items-center justify-center flex-shrink-0">
+                    <span className="text-sm font-bold text-blue-600">1</span>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900">Ensure Election is Active</h4>
+                    <p className="text-sm text-gray-600">Make sure the election is online and blockchain is connected</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start space-x-3">
+                  <div className="bg-blue-100 p-2 rounded-full w-8 h-8 flex items-center justify-center flex-shrink-0">
+                    <span className="text-sm font-bold text-blue-600">2</span>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900">Enter Your Details</h4>
+                    <p className="text-sm text-gray-600">Provide your surname and matric number for verification</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start space-x-3">
+                  <div className="bg-blue-100 p-2 rounded-full w-8 h-8 flex items-center justify-center flex-shrink-0">
+                    <span className="text-sm font-bold text-blue-600">3</span>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900">Copy Your Code</h4>
+                    <p className="text-sm text-gray-600">Save your voting code securely for later use</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start space-x-3">
+                  <div className="bg-blue-100 p-2 rounded-full w-8 h-8 flex items-center justify-center flex-shrink-0">
+                    <span className="text-sm font-bold text-blue-600">4</span>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900">Cast Your Votes</h4>
+                    <p className="text-sm text-gray-600">Select your preferred candidates for each position</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start space-x-3">
+                  <div className="bg-blue-100 p-2 rounded-full w-8 h-8 flex items-center justify-center flex-shrink-0">
+                    <span className="text-sm font-bold text-blue-600">5</span>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900">Submit with Code</h4>
+                    <p className="text-sm text-gray-600">Enter your voting code and submit your votes to complete the process</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                <div className="flex items-start space-x-3">
+                  <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-medium text-blue-900 mb-1">Security Note</h4>
+                    <p className="text-sm text-blue-700">
+                      Your voting code is unique and secure. Keep it safe as it can be used to verify your vote on the blockchain later.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

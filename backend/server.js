@@ -10,7 +10,8 @@ const adminRoutes = require('./routes/adminRoutes');
 const candidateRoutes = require('./routes/candidateRoutes');
 const voterRoutes = require('./routes/voterRoutes');
 const electionRoutes = require('./routes/electionRoutes');
-const { connectToNetwork } = require('./blockchain/fabricUtils');
+const blockchainRoutes = require('./routes/blockchainRoutes');
+const contractUtils = require('./ethereum/contractUtils');
 
 
 dotenv.config();
@@ -46,6 +47,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/candidates', candidateRoutes);
 app.use('/api/voters', voterRoutes);
 app.use('/api/election', electionRoutes);
+app.use('/api', blockchainRoutes);
 
 // Sample test route
 app.get('/', (req, res) => {
@@ -62,11 +64,8 @@ app.get('/health', async (req, res) => {
     // Check blockchain connectivity
     let blockchainStatus = 'disconnected';
     try {
-      const network = await connectToNetwork();
-      const contract = network.getContract('votecc');
-      // Try a simple query to verify the connection is working
-      await contract.submitTransaction('allVotes');
-      blockchainStatus = 'connected';
+      const isConnected = await contractUtils.checkConnection();
+      blockchainStatus = isConnected ? 'connected' : 'disconnected';
     } catch (blockchainError) {
       logger.warn('⚠️ Blockchain health check failed:', blockchainError.message);
       blockchainStatus = 'disconnected';
@@ -88,38 +87,7 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// Blockchain status endpoint
-app.get('/api/blockchain-status', async (req, res) => {
-  try {
-    let blockchainStatus = 'disconnected';
-    let error = null;
-    
-    try {
-      const network = await connectToNetwork();
-      const contract = network.getContract('votecc');
-      // Try a simple query to verify the connection is working
-      await contract.submitTransaction('allVotes');
-      blockchainStatus = 'connected';
-    } catch (blockchainError) {
-      logger.warn('⚠️ Blockchain status check failed:', blockchainError.message);
-      blockchainStatus = 'disconnected';
-      error = blockchainError.message;
-    }
-
-    res.json({ 
-      status: blockchainStatus,
-      error: error,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    logger.error('Blockchain status check error:', error);
-    res.status(500).json({ 
-      status: 'error',
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
+// Blockchain status is now handled by blockchainRoutes
 
 // Error handling middleware
 app.use((err, req, res, next) => {

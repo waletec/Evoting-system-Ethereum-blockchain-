@@ -15,8 +15,9 @@ import {
   AlertTriangle,
   Info,
   Loader2,
+  Key,
 } from "lucide-react"
-import { castVote, getCurrentElectionInfo, getBlockchainStatus } from "../api"
+import { castVote, getCurrentElectionInfo, getBlockchainStatus, verifyVotingCode } from "../api"
 import BlockchainStatus from "../components/BlockchainStatus"
 
 const VotingPage = () => {
@@ -32,6 +33,9 @@ const VotingPage = () => {
   const [error, setError] = useState("")
   const [candidate, setCandidate] = useState("")
   const [blockchainStatus, setBlockchainStatus] = useState('checking')
+  const [votingCode, setVotingCode] = useState("")
+  const [codeValidationError, setCodeValidationError] = useState("")
+  const [isValidatingCode, setIsValidatingCode] = useState(false)
 
   const navigate = useNavigate()
 
@@ -236,11 +240,28 @@ const VotingPage = () => {
   const handleSubmitVotes = async () => {
     if (!voterSession || !election) return
 
+    // Validate voting code first
+    if (!votingCode.trim()) {
+      setCodeValidationError("Please enter your voting code")
+      return
+    }
+
     try {
       setIsSubmitting(true)
       setError("")
+      setCodeValidationError("")
 
+      // Verify the voting code before proceeding
+      setIsValidatingCode(true)
+      const codeVerification = await verifyVotingCode(votingCode, voterSession.matricNumber)
+      
+      if (!codeVerification.success) {
+        setCodeValidationError(codeVerification.message || "Invalid voting code")
+        setIsValidatingCode(false)
+        return
+      }
 
+      setIsValidatingCode(false)
 
       // Use matric number from session
       let actualMatricNumber = voterSession.matricNumber
@@ -267,7 +288,7 @@ const VotingPage = () => {
 
         const apiData = {
           matricNumber: actualMatricNumber,
-          code: voterSession.code, // Use the code from session
+          code: votingCode, // Use the entered voting code
           candidate: selectedCandidate.fullName,
           position: selection.positionTitle
         }
@@ -296,6 +317,7 @@ const VotingPage = () => {
       setError(error.error || "Failed to submit votes. Please try again.")
     } finally {
       setIsSubmitting(false)
+      setIsValidatingCode(false)
     }
   }
 
@@ -608,30 +630,63 @@ const VotingPage = () => {
             )}
 
             {/* Action Buttons */}
-            <div className="flex space-x-4">
-              <button
-                onClick={() => setShowConfirmation(false)}
-                className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Review Again
-              </button>
-              <button
-                onClick={handleSubmitVotes}
-                disabled={isSubmitting || blockchainStatus === 'disconnected'}
-                className="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    <span>Submitting...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="h-5 w-5" />
-                    <span>Confirm & Submit</span>
-                  </>
+            <div className="space-y-4">
+              {/* Voting Code Input */}
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center space-x-2 mb-3">
+                  <Key className="h-5 w-5 text-blue-600" />
+                  <span className="font-medium text-blue-900">Enter Your Voting Code</span>
+                </div>
+                <input
+                  type="text"
+                  value={votingCode}
+                  onChange={(e) => {
+                    setVotingCode(e.target.value)
+                    setCodeValidationError("")
+                  }}
+                  placeholder="Enter the voting code you received"
+                  className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors ${
+                    codeValidationError ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                  }`}
+                  disabled={isSubmitting}
+                />
+                {codeValidationError && (
+                  <p className="mt-2 text-sm text-red-600 flex items-center space-x-1">
+                    <AlertTriangle className="h-4 w-4" />
+                    <span>{codeValidationError}</span>
+                  </p>
                 )}
-              </button>
+                <p className="mt-2 text-xs text-blue-700">
+                  This code was sent to you during registration and is required to submit your vote.
+                </p>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex space-x-4">
+                <button
+                  onClick={() => setShowConfirmation(false)}
+                  className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Review Again
+                </button>
+                <button
+                  onClick={handleSubmitVotes}
+                  disabled={isSubmitting || blockchainStatus === 'disconnected' || !votingCode.trim()}
+                  className="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-5 w-5" />
+                      <span>Confirm & Submit</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
